@@ -7,6 +7,7 @@ import {
   aprovarPedido,
   getAulaRecorrente,
   getAlunosPorModulos,
+  getCandidatosTesteDoDia,
   getMeuPedido,
   getOuCriaAula,
   getPedidosPendentes,
@@ -16,6 +17,7 @@ import {
   pedirPresenca,
   recusarPedido,
   type Aluno,
+  type CandidatoAulaTeste,
   type PedidoPendente,
   type PedidoPresenca,
   type ProfessorAula,
@@ -78,6 +80,7 @@ export default function ChamadaDetalhe() {
   const [professoresDoModulo, setProfessoresDoModulo] = useState<ProfessorAula[]>([]);
 
   const [pedidosPendentes, setPedidosPendentes] = useState<PedidoPendente[]>([]);
+  const [candidatosTeste, setCandidatosTeste] = useState<CandidatoAulaTeste[]>([]);
   const [processandoPedido, setProcessandoPedido] = useState<string | null>(null);
 
   const [menuExportacao, setMenuExportacao] = useState(false);
@@ -118,14 +121,16 @@ export default function ChamadaDetalhe() {
         return;
       }
 
-      const [aula, listaAlunos] = await Promise.all([
+      const [aula, listaAlunos, listaCandidatos] = await Promise.all([
         getOuCriaAula(recorrente.id, dataSelecionada, recorrente.hora, session?.user.id ?? null),
         getAlunosPorModulos(recorrente.modulos),
+        getCandidatosTesteDoDia(recorrente.id, dataSelecionada),
       ]);
       const [listaPresencas, pendentes] = await Promise.all([getPresencas(aula), getPedidosPendentes(aula)]);
 
       setAulaId(aula);
       setAlunos(listaAlunos);
+      setCandidatosTeste(listaCandidatos);
       setPresencas(
         Object.fromEntries(
           listaPresencas.map((p) => [p.aluno_id, { status: p.status, registradoEm: p.registrado_em }])
@@ -427,6 +432,27 @@ export default function ChamadaDetalhe() {
               </View>
             );
           })}
+        </View>
+      ) : null}
+
+      {candidatosTeste.length > 0 ? (
+        <View style={styles.pedidosSecao}>
+          <Text style={[type.label, styles.secao]}>Aula Experimental</Text>
+          <Text style={[type.caption, styles.subtitle]}>
+            Candidatos ainda não matriculados — só informativo, sem controle de presença.
+          </Text>
+          {candidatosTeste.map((candidato) => (
+            <View key={candidato.id} testID={`chamada-detalhe-candidato-${candidato.id}`} style={styles.row}>
+              <View style={styles.nomeArea}>
+                <Text style={[type.body, styles.nome]} numberOfLines={1}>
+                  {candidato.nome}
+                </Text>
+                <Text style={[type.caption, styles.moduloTexto]}>
+                  Aula Experimental{candidato.telefone ? ` · ${candidato.telefone}` : ''}
+                </Text>
+              </View>
+            </View>
+          ))}
         </View>
       ) : null}
 

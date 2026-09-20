@@ -12,7 +12,6 @@ import {
   View,
 } from 'react-native';
 
-import { getAlunos } from '../../../src/features/alunos/api';
 import {
   criarAulaTeste,
   diaSemanaPorDataISO,
@@ -48,7 +47,9 @@ export default function NovaAulaTeste() {
   const souDono = meuPapel === 'dono';
 
   const [aulaRecorrenteId, setAulaRecorrenteId] = useState<string | null>(null);
-  const [alunoIds, setAlunoIds] = useState<string[]>([]);
+  const [candidatos, setCandidatos] = useState<{ nome: string; telefone: string }[]>([]);
+  const [nomeCandidato, setNomeCandidato] = useState('');
+  const [telefoneCandidato, setTelefoneCandidato] = useState('');
   const [dataISO, setDataISO] = useState(formatDataISO(new Date()));
   const [dataAberta, setDataAberta] = useState(false);
   const [observacoes, setObservacoes] = useState('');
@@ -61,19 +62,17 @@ export default function NovaAulaTeste() {
     error: erroCarregar,
   } = useAsyncData(
     async () => {
-      const [alunos, grade, responsabilidades] = await Promise.all([
-        getAlunos(),
+      const [grade, responsabilidades] = await Promise.all([
         getGradeSemanal(),
         souDono || !session?.user.id ? Promise.resolve([]) : getResponsabilidadesProfessor(session.user.id),
       ]);
       const idsResponsavel = new Set(responsabilidades.map((r) => r.aula_recorrente_id));
       const slots = souDono ? grade : grade.filter((slot) => idsResponsavel.has(slot.id));
-      return { alunos: alunos.filter((a) => a.ativo), slots };
+      return { slots };
     },
     [souDono, session?.user.id],
     { mensagemErro: 'Erro ao carregar dados. Tente novamente.' }
   );
-  const alunos = dadosIniciais?.alunos ?? [];
   const slots = dadosIniciais?.slots ?? [];
   const error = erroSalvar ?? erroCarregar;
 
@@ -86,7 +85,25 @@ export default function NovaAulaTeste() {
     label: `${DIAS_SEMANA[s.dia_semana]} · ${formatHora(s.hora)}`,
     sublabel: formatModulos(s.modulos),
   }));
-  const opcoesAlunos = alunos.map((a) => ({ value: a.id, label: a.nome, sublabel: `Módulo ${a.modulo}` }));
+
+  // Candidato de aula teste ainda não é aluno matriculado — texto livre em
+  // vez de escolher em cadastro existente (docs/product/chamada-agenda-
+  // frequencia.md §7.2, decisão 4: continua aceitando vários por aula).
+  function adicionarCandidato() {
+    const nome = nomeCandidato.trim();
+    if (!nome) {
+      setErroSalvar('Informe o nome do candidato.');
+      return;
+    }
+    setErroSalvar(null);
+    setCandidatos((atual) => [...atual, { nome, telefone: telefoneCandidato.trim() }]);
+    setNomeCandidato('');
+    setTelefoneCandidato('');
+  }
+
+  function removerCandidato(indice: number) {
+    setCandidatos((atual) => atual.filter((_, i) => i !== indice));
+  }
 
   async function salvar() {
     setErroSalvar(null);
@@ -95,8 +112,8 @@ export default function NovaAulaTeste() {
       setErroSalvar('Escolha o horário da grade.');
       return;
     }
-    if (alunoIds.length === 0) {
-      setErroSalvar('Escolha ao menos um aluno.');
+    if (candidatos.length === 0) {
+      setErroSalvar('Adicione ao menos um candidato.');
       return;
     }
     if (dataForaDoDia) {
@@ -106,8 +123,14 @@ export default function NovaAulaTeste() {
 
     setSalvando(true);
     try {
-      await criarAulaTeste(aulaRecorrenteId, dataISO, alunoIds, observacoes.trim() || null);
-      router.back();
+      await criarAulaTeste(
+        aulaRecorrenteId,
+        dataISO,
+        candidatos.map((c) => ({ nome: c.nome, telefone: c.telefone || null })),
+        observacoes.trim() || null
+      );
+      if (router.canGoBack()) router.back();
+      else router.replace('/');
     } catch (err) {
       console.error(err);
       setErroSalvar('Erro ao agendar aula teste. Tente novamente.');
@@ -155,17 +178,48 @@ export default function NovaAulaTeste() {
             />
           )}
 
-          <Text style={[type.label, styles.rotulo]}>Alunos</Text>
-          <Dropdown
-            testID="nova-teste-dropdown-alunos"
-            placeholder="Selecione um ou mais alunos"
-            searchable
-            multiple
-            options={opcoesAlunos}
-            value={alunoIds}
-            onChange={setAlunoIds}
-            vazio="Nenhum aluno encontrado."
-          />
+          <Text style={[type.label, styles.rotulo]}>Candidatos</Text>
+          <Text style={[type.caption, styles.subtitle, styles.dica]}>
+            Ainda não são alunos matriculados — só nome e telefone (opcional).
+          </Text>
+          <View style={styles.adicionarRow}>
+            <TextInput
+              style={[styles.input, styles.inputCandidato]}
+              value={nomeCandidato}
+              onChangeText={setNomeCandidato}
+              placeholder="Nome"
+            />
+            <TextInput
+              style={[styles.input, styles.inputCandidato]}
+              value={telefoneCandidato}
+              onChangeText={setTelefoneCandidato}
+              placeholder="Telefone (opcional)"
+              keyboardType="phone-pad"
+              onSubmitEditing={adicionarCandidato}
+            />
+            <TouchableOpacity style={styles.adicionarBotao} onPress={adicionarCandidato}>
+              <Text style={styles.adicionarBotaoTexto}>Adicionar</Text>
+            </TouchableOpacity>
+          </View>
+          {candidatos.length > 0 ? (
+            <View style={styles.chips}>
+              {candidatos.map((c, indice) => (
+                <TouchableOpacity
+                  key={`${c.nome}-${indice}`}
+                  testID={`nova-teste-candidato-${indice}`}
+                  style={styles.candidatoChip}
+                  onPress={() => removerCandidato(indice)}
+                >
+                  <Text style={styles.candidatoChipTexto}>
+                    {c.nome}
+                    {c.telefone ? ` · ${c.telefone}` : ''} ✕
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : (
+            <Text style={[type.caption, styles.subtitle]}>Nenhum candidato adicionado ainda.</Text>
+          )}
 
           <Text style={[type.label, styles.rotulo]}>Data</Text>
           <Text style={[type.caption, styles.subtitle, styles.dica]}>
@@ -240,6 +294,47 @@ const styles = StyleSheet.create({
   },
   dica: {
     marginBottom: spacing.xs,
+  },
+  adicionarRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  inputCandidato: {
+    flex: 1,
+  },
+  adicionarBotao: {
+    height: touchTarget,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adicionarBotaoTexto: {
+    color: colors.onPrimary,
+    fontFamily: type.subtitle.fontFamily,
+    fontSize: type.subtitle.fontSize,
+  },
+  chips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  candidatoChip: {
+    minHeight: touchTarget,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.surfaceTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  candidatoChipTexto: {
+    color: colors.primary,
+    fontFamily: type.subtitle.fontFamily,
+    fontSize: type.subtitle.fontSize,
   },
   input: {
     height: touchTarget,

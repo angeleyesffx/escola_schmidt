@@ -1,4 +1,4 @@
-import { Redirect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -34,7 +34,8 @@ function formatHora(hora: string) {
 
 export default function NovaAulaParticular() {
   const router = useRouter();
-  const { meuPapel, session } = useAuth();
+  const { meuPapel, session, meuAluno } = useAuth();
+  const souAluno = meuPapel === 'aluno';
 
   const [alunoId, setAlunoId] = useState<string | null>(null);
   const [professorId, setProfessorId] = useState<string | null>(null);
@@ -53,15 +54,26 @@ export default function NovaAulaParticular() {
     error: erroCarregar,
   } = useAsyncData(
     async () => {
-      const [dadosAlunos, dadosProfessores] = await Promise.all([getAlunos(), getProfessores()]);
+      // Aluno reserva só pra si mesmo — não precisa (nem consegue, pela RLS
+      // de `alunos`) ver a lista inteira de matriculados.
+      const [dadosAlunos, dadosProfessores] = await Promise.all([
+        souAluno ? Promise.resolve([]) : getAlunos(),
+        getProfessores(),
+      ]);
       return { alunos: dadosAlunos.filter((a) => a.ativo), professores: dadosProfessores };
     },
-    [],
+    [souAluno],
     { mensagemErro: 'Erro ao carregar alunos e professores. Tente novamente.' }
   );
   const alunos = dadosIniciais?.alunos ?? [];
   const professores = dadosIniciais?.professores ?? [];
   const error = erroSalvar ?? erroCarregar;
+
+  useEffect(() => {
+    if (souAluno && meuAluno) {
+      setAlunoId(meuAluno.id);
+    }
+  }, [souAluno, meuAluno]);
 
   // A equipe só enxerga o próprio perfil na lista de professores (a não ser
   // que seja dono) — se veio 1 só, já pré-seleciona.
@@ -124,7 +136,8 @@ export default function NovaAulaParticular() {
     setSalvando(true);
     try {
       await criarAulaParticular(alunoId, professorId, dataISO, horaAula, observacoes.trim() || null);
-      router.back();
+      if (router.canGoBack()) router.back();
+      else router.replace('/');
     } catch (err: unknown) {
       console.error(err);
       const jaExiste =
@@ -139,8 +152,12 @@ export default function NovaAulaParticular() {
     }
   }
 
-  if (meuPapel === 'aluno') {
-    return <Redirect href="/" />;
+  if (souAluno && !meuAluno) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
   }
 
   if (loading) {
@@ -160,15 +177,21 @@ export default function NovaAulaParticular() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <Text style={[type.label, styles.rotulo]}>Aluno</Text>
-          <Dropdown
-            testID="nova-particular-dropdown-aluno"
-            placeholder="Selecione o aluno"
-            searchable
-            options={opcoesAlunos}
-            value={alunoId}
-            onChange={setAlunoId}
-            vazio="Nenhum aluno encontrado."
-          />
+          {souAluno ? (
+            <View style={styles.input}>
+              <Text style={styles.periodoTexto}>{meuAluno?.nome}</Text>
+            </View>
+          ) : (
+            <Dropdown
+              testID="nova-particular-dropdown-aluno"
+              placeholder="Selecione o aluno"
+              searchable
+              options={opcoesAlunos}
+              value={alunoId}
+              onChange={setAlunoId}
+              vazio="Nenhum aluno encontrado."
+            />
+          )}
 
           <Text style={[type.label, styles.rotulo]}>Professor</Text>
           <Dropdown

@@ -233,6 +233,18 @@ export async function excluirAulaParticular(id: string) {
   if (error) throw error;
 }
 
+// Só data/hora — aluno/professor da reserva são fixos (decisão registrada em
+// docs/product/chamada-agenda-frequencia.md §7.2). A RPC (0026) garante isso
+// no banco, não só aqui; esta função só repassa os 3 parâmetros que ela aceita.
+export async function remarcarAulaParticular(aulaId: string, novaData: string, novaHora: string) {
+  const { error } = await supabase.rpc('remarcar_aula_particular', {
+    p_aula_id: aulaId,
+    p_nova_data: novaData,
+    p_nova_hora: novaHora,
+  });
+  if (error) throw error;
+}
+
 export type TipoRecorrencia = 'unica' | 'diaria' | 'semanal' | 'mensal' | 'anual';
 
 export type DisponibilidadeParticular = {
@@ -325,6 +337,12 @@ export async function removerResponsabilidade(id: string) {
   if (error) throw error;
 }
 
+export type CandidatoAulaTeste = {
+  id: string;
+  nome: string;
+  telefone: string | null;
+};
+
 export type AulaTeste = {
   id: string;
   aula_recorrente_id: string;
@@ -333,10 +351,8 @@ export type AulaTeste = {
   dia_semana: number;
   hora: string;
   modulos: number[];
-  alunos: { id: string; nome: string }[];
+  candidatos: CandidatoAulaTeste[];
 };
-
-type AlunoNome = { id: string; nome: string };
 
 type AulaTesteLinha = {
   id: string;
@@ -344,17 +360,19 @@ type AulaTesteLinha = {
   data: string;
   observacoes: string | null;
   aulas_recorrentes: { dia_semana: number; hora: string; modulos: number[] } | null;
-  aulas_teste_alunos: { alunos: AlunoNome | null }[];
+  aulas_teste_candidatos: CandidatoAulaTeste[];
 };
 
 // Aula teste não mora em `aulas` (que trava 1 aluno por particular) — é um
 // agendamento à parte que sempre aponta pra um horário já existente da grade
-// e pode juntar vários alunos na mesma data (supabase/migrations/0018).
+// e pode juntar vários candidatos na mesma data (supabase/migrations/0018).
+// Candidato é texto livre (nome/telefone), não FK pra `alunos` — quem faz
+// aula teste ainda não está matriculado (supabase/migrations/0027).
 export async function getAulasTestePorPeriodo(inicioISO: string, fimISO: string) {
   const { data, error } = await supabase
     .from('aulas_teste')
     .select(
-      'id, aula_recorrente_id, data, observacoes, aulas_recorrentes(dia_semana, hora, modulos), aulas_teste_alunos(alunos(id, nome))'
+      'id, aula_recorrente_id, data, observacoes, aulas_recorrentes(dia_semana, hora, modulos), aulas_teste_candidatos(id, nome, telefone)'
     )
     .gte('data', inicioISO)
     .lte('data', fimISO)
@@ -369,16 +387,30 @@ export async function getAulasTestePorPeriodo(inicioISO: string, fimISO: string)
     dia_semana: linha.aulas_recorrentes?.dia_semana ?? 0,
     hora: linha.aulas_recorrentes?.hora ?? '',
     modulos: linha.aulas_recorrentes?.modulos ?? [],
-    alunos: (linha.aulas_teste_alunos ?? [])
-      .map((a) => a.alunos)
-      .filter((a): a is AlunoNome => a !== null),
+    candidatos: linha.aulas_teste_candidatos ?? [],
   })) as AulaTeste[];
+}
+
+// Alimenta a seção "Aula Experimental" da chamada (chamada/[id].tsx) — só o
+// nome/telefone dos candidatos daquele slot+data, sem presença formal
+// (decisão 3 de docs/product/chamada-agenda-frequencia.md §7.2).
+export async function getCandidatosTesteDoDia(aulaRecorrenteId: string, data: string) {
+  const { data: linhas, error } = await supabase
+    .from('aulas_teste')
+    .select('aulas_teste_candidatos(id, nome, telefone)')
+    .eq('aula_recorrente_id', aulaRecorrenteId)
+    .eq('data', data);
+  if (error) throw error;
+
+  return ((linhas ?? []) as unknown as { aulas_teste_candidatos: CandidatoAulaTeste[] }[]).flatMap(
+    (linha) => linha.aulas_teste_candidatos ?? []
+  );
 }
 
 export async function criarAulaTeste(
   aulaRecorrenteId: string,
   data: string,
-  alunoIds: string[],
+  candidatos: { nome: string; telefone: string | null }[],
   observacoes: string | null
 ) {
   const { data: criada, error } = await supabase
@@ -388,10 +420,10 @@ export async function criarAulaTeste(
     .single();
   if (error) throw error;
 
-  const { error: erroAlunos } = await supabase
-    .from('aulas_teste_alunos')
-    .insert(alunoIds.map((alunoId) => ({ aula_teste_id: criada.id, aluno_id: alunoId })));
-  if (erroAlunos) throw erroAlunos;
+  const { error: erroCandidatos } = await supabase
+    .from('aulas_teste_candidatos')
+    .insert(candidatos.map((c) => ({ aula_teste_id: criada.id, nome: c.nome, telefone: c.telefone })));
+  if (erroCandidatos) throw erroCandidatos;
 
   return criada.id as string;
 }

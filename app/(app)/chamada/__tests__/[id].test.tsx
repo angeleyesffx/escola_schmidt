@@ -6,6 +6,7 @@ import {
   aprovarPedido,
   getAulaRecorrente,
   getAlunosPorModulos,
+  getCandidatosTesteDoDia,
   getMeuPedido,
   getOuCriaAula,
   getPedidosPendentes,
@@ -45,6 +46,7 @@ jest.mock('../../../../src/features/chamada/api', () => {
     ConflitoPresencaError,
     getAulaRecorrente: jest.fn(),
     getAlunosPorModulos: jest.fn(),
+    getCandidatosTesteDoDia: jest.fn(),
     getOuCriaAula: jest.fn(),
     getPresencas: jest.fn(),
     getPedidosPendentes: jest.fn(),
@@ -64,6 +66,7 @@ jest.mock('../../../../src/features/chamada/export', () => ({
 const mockExportarChamada = exportarChamada as jest.MockedFunction<typeof exportarChamada>;
 const mockGetAulaRecorrente = getAulaRecorrente as jest.MockedFunction<typeof getAulaRecorrente>;
 const mockGetAlunosPorModulos = getAlunosPorModulos as jest.MockedFunction<typeof getAlunosPorModulos>;
+const mockGetCandidatosTesteDoDia = getCandidatosTesteDoDia as jest.MockedFunction<typeof getCandidatosTesteDoDia>;
 const mockGetOuCriaAula = getOuCriaAula as jest.MockedFunction<typeof getOuCriaAula>;
 const mockGetPresencas = getPresencas as jest.MockedFunction<typeof getPresencas>;
 const mockGetPedidosPendentes = getPedidosPendentes as jest.MockedFunction<typeof getPedidosPendentes>;
@@ -84,6 +87,8 @@ describe('ChamadaDetalhe', () => {
     mockBack.mockReset();
     mockGetAulaRecorrente.mockReset();
     mockGetAlunosPorModulos.mockReset();
+    mockGetCandidatosTesteDoDia.mockReset();
+    mockGetCandidatosTesteDoDia.mockResolvedValue([]);
     mockGetOuCriaAula.mockReset();
     mockGetPresencas.mockReset();
     mockGetPedidosPendentes.mockReset();

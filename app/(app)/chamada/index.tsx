@@ -49,6 +49,11 @@ export default function ChamadaIndex() {
   const { meuPapel, session } = useAuth();
   const podeEditar = meuPapel === 'dono' || meuPapel === 'professor';
   const souProfessor = meuPapel === 'professor';
+  const souAluno = meuPapel === 'aluno';
+  // A RLS de aula_leitura (0026) já escopa a lista: professor só vê as
+  // próprias particulares, aluno só as suas — quem aparece aqui já é quem
+  // pode editar/cancelar (mesma condição de aula_atualizacao/aula_exclusao).
+  const podeGerenciarParticular = podeEditar || souAluno;
   const [modo, setModo] = useState<ModoCalendario>('semana');
   const [dataSelecionada, setDataSelecionada] = useState(paraDataSemHorario(new Date()));
   const [pickerAberto, setPickerAberto] = useState(false);
@@ -143,7 +148,7 @@ export default function ChamadaIndex() {
   }
 
   function confirmarExclusaoTeste(aula: AulaTeste) {
-    const nomes = aula.alunos.map((a) => a.nome).join(', ') || 'sem alunos';
+    const nomes = aula.candidatos.map((c) => c.nome).join(', ') || 'sem candidatos';
     Alert.alert(
       'Cancelar aula teste',
       `Cancelar a aula teste de ${nomes} em ${aula.data.split('-').reverse().join('/')} às ${formatHora(aula.hora)}?`,
@@ -239,6 +244,18 @@ export default function ChamadaIndex() {
             onPress={() => router.push('/chamada/agendar')}
           >
             <Text style={styles.particularBotaoTexto}>Agendar aula</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {souAluno ? (
+        <View style={styles.tituloRow}>
+          <TouchableOpacity
+            testID="chamada-index-particular-novo-aluno"
+            style={styles.particularBotao}
+            onPress={() => router.push('/chamada/nova-particular')}
+          >
+            <Text style={styles.particularBotaoTexto}>Agendar aula particular</Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -487,8 +504,12 @@ export default function ChamadaIndex() {
               key={p.id}
               testID={`chamada-index-particular-item-${p.id}`}
               style={styles.eventoItem}
-              disabled={!podeEditar}
-              onLongPress={() => podeEditar && confirmarExclusaoParticular(p)}
+              disabled={!podeGerenciarParticular}
+              onPress={() =>
+                podeGerenciarParticular &&
+                router.push(`/chamada/remarcar-particular?id=${p.id}&professorId=${p.professor_id}`)
+              }
+              onLongPress={() => podeGerenciarParticular && confirmarExclusaoParticular(p)}
             >
               <View style={[styles.eventoItemCor, styles.diaParticularDot]} />
               <View style={styles.eventoItemTexto}>
@@ -521,7 +542,7 @@ export default function ChamadaIndex() {
             >
               <View style={[styles.eventoItemCor, styles.diaTesteDot]} />
               <View style={styles.eventoItemTexto}>
-                <Text style={type.body}>{t.alunos.map((a) => a.nome).join(', ') || 'Sem alunos'}</Text>
+                <Text style={type.body}>{t.candidatos.map((c) => c.nome).join(', ') || 'Sem candidatos'}</Text>
                 <Text style={[type.caption, styles.subtitle]}>
                   {t.data.split('-').reverse().join('/')} às {formatHora(t.hora)} · {formatModulos(t.modulos)}
                 </Text>
