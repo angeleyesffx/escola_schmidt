@@ -18,8 +18,7 @@ export const uiAssets = {
     desempenho: require('../../assets/cards/card-desempenho.png'),
     eventos: require('../../assets/cards/card-eventos.png'),
     frequencia: require('../../assets/cards/card-frequencia.png'),
-    // Engrenagem — reservado pra uma futura tela de Configurações, não é o ícone de perfil.
-    perfil: require('../../assets/cards/card-perfil.png'),
+    configuracoes: require('../../assets/cards/card-configuracoes.png'),
     logout: require('../../assets/cards/card-logout.png'),
   },
 } as const;

@@ -83,6 +83,56 @@ export async function getAulaRecorrente(id: string) {
   return data as AulaRecorrente;
 }
 
+// ---------------------------------------------------------------------------
+// Grade semanal (dono-only) — docs/product/papeis-e-permissoes.md §6.4.
+// RLS já era dono-only (`grade_escrita`, 0001); só faltava a tela.
+// ---------------------------------------------------------------------------
+
+export type SlotGradeAdmin = AulaRecorrente & { ativo: boolean };
+
+export async function getGradeCompleta() {
+  const { data, error } = await supabase
+    .from('aulas_recorrentes')
+    .select('id, dia_semana, hora, modulos, ativo')
+    .order('dia_semana')
+    .order('hora');
+  if (error) throw error;
+  return data as SlotGradeAdmin[];
+}
+
+export async function criarSlotGrade(diaSemana: number, hora: string, modulos: number[]) {
+  const { error } = await supabase.from('aulas_recorrentes').insert({ dia_semana: diaSemana, hora, modulos });
+  if (error) throw error;
+}
+
+export async function atualizarSlotGrade(
+  id: string,
+  campos: Partial<{ dia_semana: number; hora: string; modulos: number[]; ativo: boolean }>
+) {
+  const { error } = await supabase.from('aulas_recorrentes').update(campos).eq('id', id);
+  if (error) throw error;
+}
+
+// Decisão registrada em papeis-e-permissoes.md §6.4 (item 2): só desativar
+// quando há histórico vinculado — excluir de verdade apagaria o vínculo de
+// chamadas antigas (`aulas.aula_recorrente_id` é `on delete set null`) ou,
+// pior, cancelaria aulas teste já marcadas (`aulas_teste` é `on delete
+// cascade`). A UI decide se oferece o botão de excluir com base nisso.
+export async function getUsoSlotGrade(id: string) {
+  const [aulas, aulasTeste] = await Promise.all([
+    supabase.from('aulas').select('id', { count: 'exact', head: true }).eq('aula_recorrente_id', id),
+    supabase.from('aulas_teste').select('id', { count: 'exact', head: true }).eq('aula_recorrente_id', id),
+  ]);
+  if (aulas.error) throw aulas.error;
+  if (aulasTeste.error) throw aulasTeste.error;
+  return { aulas: aulas.count ?? 0, aulasTeste: aulasTeste.count ?? 0 };
+}
+
+export async function excluirSlotGrade(id: string) {
+  const { error } = await supabase.from('aulas_recorrentes').delete().eq('id', id);
+  if (error) throw error;
+}
+
 // Um módulo pode ter mais de um professor responsável, e um mesmo horário
 // pode juntar módulos diferentes — por isso o vínculo é por (aula, módulo),
 // não uma coluna única na aula inteira.

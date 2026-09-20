@@ -48,7 +48,6 @@ export function QuickMenu({ variante = 'barra' }: Props) {
 
   const souAluno = (meuPapel === 'aluno' || meuPapel === 'responsavel');
   const souEquipe = meuPapel === 'dono' || meuPapel === 'professor';
-  const souDono = meuPapel === 'dono';
 
   const itens: ItemMenu[] = [
     { label: 'Início', href: '/', icon: uiAssets.card.inicio },
@@ -59,23 +58,11 @@ export function QuickMenu({ variante = 'barra' }: Props) {
   if (souEquipe) {
     itens.push({ label: 'Alunos', href: '/alunos', icon: uiAssets.card.alunos });
     itens.push({ label: 'Chamada', href: '/chamada/lista', icon: uiAssets.card.chamada });
-    itens.push({
-      label: souDono ? 'Horários por professor' : 'Horários livres',
-      href: '/chamada/disponibilidade',
-      icon: uiAssets.card.calendario,
-    });
-    itens.push({
-      label: souDono ? 'Módulos por professor' : 'Meus módulos',
-      href: '/chamada/modulos',
-      icon: uiAssets.card.chamada,
-    });
-  }
-
-  if (souDono) {
-    itens.push({ label: 'Usuários', href: '/usuarios', icon: uiAssets.card.perfil });
-    itens.push({ label: 'Catálogo de Evolução', href: '/catalogo-evolucao', icon: uiAssets.card.desempenho });
-  } else if (meuPapel === 'professor') {
-    itens.push({ label: 'Convidar usuário', href: '/usuarios/novo', icon: uiAssets.card.perfil });
+    // Itens de administração (disponibilidade, módulos, usuários, catálogo,
+    // grade semanal, tipos de evento) saem daqui e viram 1 hub só — evita o
+    // menu crescer item a item conforme a escola pede mais tela de admin
+    // (docs/product/papeis-e-permissoes.md §6.3).
+    itens.push({ label: 'Configurações', href: '/configuracoes', icon: uiAssets.card.configuracoes });
   }
 
   if (souAluno) {
