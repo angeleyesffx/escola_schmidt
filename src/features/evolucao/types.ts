@@ -14,6 +14,7 @@ export type RequisitoNivelEvolucao = {
   peso: number;
   notaMinima: number | null;
   statusMinimo: StatusHabilidadeEvolucao;
+  valorBase: number;
 };
 
 export type StatusAtualHabilidade = {
@@ -143,6 +144,7 @@ export type HabilidadeCatalogo = {
   nomeInternacional: string | null;
   descricao: string | null;
   ativo: boolean;
+  valorBase: number;
 };
 
 export type RequisitoNivelAdmin = {

@@ -33,7 +33,12 @@ import {
   registrarPromocaoNivel,
   getStatusHabilidadesAluno,
 } from './api';
-import { calcularFrequenciaPorPlano, calcularPercentualCriterios, calcularProgressoNivel } from './selectors';
+import {
+  calcularFrequenciaPorPlano,
+  calcularPercentualCriterios,
+  calcularPontuacaoAluno,
+  calcularProgressoNivel,
+} from './selectors';
 import type {
   CriterioHabilidadeEvolucao,
   HistoricoNivelEvolucao,
@@ -342,6 +347,9 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
   }
 
   const nomeExibicaoAluno = aluno?.nome ?? nomeFallback;
+  // Indicador complementar ao percentual de progresso — não substitui a
+  // barra (docs/product/evolucao-vs-desempenho.md §8.2).
+  const pontuacaoAtual = requisitos.length ? calcularPontuacaoAluno(requisitos, statusHabilidades) : null;
   const statusPorHabilidade = new Map(statusHabilidades.map((item) => [item.habilidadeId, item]));
   const metodologiaEscolhida = metodologiasDisponiveis.find((item) => item.id === metodologiaSelecionada) ?? null;
   const metodologiaDoAlunoAtiva = metodologiasDisponiveis.find(
@@ -465,6 +473,9 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
               <View style={styles.barraFundo}>
                 <View style={[styles.barraPreenchida, { width: `${progresso?.percentual ?? 0}%` }]} />
               </View>
+              {pontuacaoAtual != null ? (
+                <Text style={styles.pontuacaoTexto}>Pontuação atual: {pontuacaoAtual}</Text>
+              ) : null}
               <Text style={styles.cardTexto}>
                 {progresso
                   ? `${progresso.habilidadesAtingidas} de ${progresso.habilidadesTotais} habilidades atendidas.`
@@ -797,6 +808,10 @@ const styles = StyleSheet.create({
     fontSize: 30,
     lineHeight: 34,
     color: colors.text,
+  },
+  pontuacaoTexto: {
+    ...type.caption,
+    color: colors.textMuted,
   },
   barraFundo: {
     height: 12,

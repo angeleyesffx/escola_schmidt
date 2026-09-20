@@ -74,6 +74,10 @@ export default function CatalogoEvolucao() {
   const [categoriaNovaHabilidade, setCategoriaNovaHabilidade] = useState<string | null>(null);
   const [nomeNovaHabilidade, setNomeNovaHabilidade] = useState('');
   const [codigoNovaHabilidade, setCodigoNovaHabilidade] = useState('');
+  const [valorBaseNovaHabilidade, setValorBaseNovaHabilidade] = useState('1');
+  // Edição inline do valor base de habilidades já existentes — só guarda o
+  // texto em edição, indexado por habilidade, até o campo perder o foco.
+  const [edicaoValorBase, setEdicaoValorBase] = useState<Record<string, string>>({});
 
   // --- Requisitos ---
   const [metodologiaSelecionada, setMetodologiaSelecionada] = useState<string | null>(null);
@@ -199,6 +203,11 @@ export default function CatalogoEvolucao() {
       setErro('Escolha a categoria e informe o nome da habilidade.');
       return;
     }
+    const valorBase = Number(valorBaseNovaHabilidade.replace(',', '.'));
+    if (!valorBase || valorBase <= 0) {
+      setErro('Valor base precisa ser maior que zero.');
+      return;
+    }
     setSalvando(true);
     setErro(null);
     try {
@@ -206,10 +215,12 @@ export default function CatalogoEvolucao() {
         categoriaNovaHabilidade,
         nomeNovaHabilidade.trim(),
         codigoNovaHabilidade.trim() || null,
-        null
+        null,
+        valorBase
       );
       setNomeNovaHabilidade('');
       setCodigoNovaHabilidade('');
+      setValorBaseNovaHabilidade('1');
       await recarregarHabilidades();
     } catch (err) {
       console.error(err);
@@ -227,6 +238,25 @@ export default function CatalogoEvolucao() {
     } catch (err) {
       console.error(err);
       setErro('Erro ao atualizar habilidade. Tente novamente.');
+    }
+  }
+
+  async function salvarValorBase(habilidade: HabilidadeCatalogo) {
+    const texto = edicaoValorBase[habilidade.id];
+    if (texto === undefined) return;
+    const valorBase = Number(texto.replace(',', '.'));
+    setEdicaoValorBase((atual) => {
+      const { [habilidade.id]: _removido, ...resto } = atual;
+      return resto;
+    });
+    if (!valorBase || valorBase <= 0 || valorBase === habilidade.valorBase) return;
+    setErro(null);
+    try {
+      await atualizarHabilidade(habilidade.id, { valorBase });
+      await recarregarHabilidades();
+    } catch (err) {
+      console.error(err);
+      setErro('Erro ao atualizar valor base. Tente novamente.');
     }
   }
 
@@ -417,6 +447,10 @@ export default function CatalogoEvolucao() {
         {!carregandoGeral && secaoAberta === 'habilidades' ? (
           <View>
             <Text style={styles.tituloSecao}>Habilidades</Text>
+            <Text style={styles.explicacao}>
+              Valor base é o "quanto vale" a habilidade na pontuação do aluno (docs/product/evolucao-vs-desempenho.md
+              §8.2) — quanto maior, mais ela pesa quando avaliada.
+            </Text>
             {(habilidades ?? []).map((habilidade) => (
               <View key={habilidade.id} style={styles.itemRow}>
                 <View style={styles.itemTextoWrap}>
@@ -426,6 +460,14 @@ export default function CatalogoEvolucao() {
                     {habilidade.nomeInternacional ? ` · ${habilidade.nomeInternacional}` : ''}
                   </Text>
                 </View>
+                <TextInput
+                  testID={`catalogo-habilidade-valor-base-${habilidade.id}`}
+                  style={styles.inputValorBase}
+                  value={edicaoValorBase[habilidade.id] ?? String(habilidade.valorBase)}
+                  onChangeText={(texto) => setEdicaoValorBase((atual) => ({ ...atual, [habilidade.id]: texto }))}
+                  onEndEditing={() => salvarValorBase(habilidade)}
+                  keyboardType="numeric"
+                />
                 <Switch value={habilidade.ativo} onValueChange={() => alternarAtivoHabilidade(habilidade)} />
               </View>
             ))}
@@ -458,6 +500,15 @@ export default function CatalogoEvolucao() {
                     value={codigoNovaHabilidade}
                     onChangeText={setCodigoNovaHabilidade}
                     placeholder="Ex.: FigA"
+                  />
+                  <Text style={[type.label, styles.campoRotulo]}>Valor base (peso na pontuação)</Text>
+                  <TextInput
+                    testID="catalogo-habilidade-valor-base"
+                    style={styles.input}
+                    value={valorBaseNovaHabilidade}
+                    onChangeText={setValorBaseNovaHabilidade}
+                    placeholder="Ex.: 10"
+                    keyboardType="numeric"
                   />
                   <TouchableOpacity
                     testID="catalogo-habilidade-adicionar"
@@ -732,6 +783,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     backgroundColor: colors.surface,
     marginTop: spacing.sm,
+    fontFamily: type.body.fontFamily,
+    fontSize: type.body.fontSize,
+    color: colors.text,
+  },
+  inputValorBase: {
+    width: 56,
+    height: touchTarget,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.background,
+    marginRight: spacing.sm,
+    textAlign: 'center',
     fontFamily: type.body.fontFamily,
     fontSize: type.body.fontSize,
     color: colors.text,

@@ -157,6 +157,7 @@ export async function getRequisitosNivel(nivelId: string) {
         status_minimo,
         habilidades_catalogo!inner(
           nome,
+          valor_base,
           categorias_habilidade!inner(id, nome)
         )
       `
@@ -174,6 +175,7 @@ export async function getRequisitosNivel(nivelId: string) {
     peso: item.peso,
     notaMinima: item.nota_minima,
     statusMinimo: item.status_minimo,
+    valorBase: item.habilidades_catalogo.valor_base,
   })) as RequisitoNivelEvolucao[];
 }
 
@@ -345,7 +347,7 @@ export async function atualizarCategoria(
 export async function getHabilidadesCatalogo() {
   const { data, error } = await supabase
     .from('habilidades_catalogo')
-    .select('id, categoria_id, nome, slug, nome_internacional, descricao, ativo, categorias_habilidade(nome)')
+    .select('id, categoria_id, nome, slug, nome_internacional, descricao, ativo, valor_base, categorias_habilidade(nome)')
     .order('nome');
   if (error) throw error;
 
@@ -358,6 +360,7 @@ export async function getHabilidadesCatalogo() {
     nomeInternacional: item.nome_internacional,
     descricao: item.descricao,
     ativo: item.ativo,
+    valorBase: item.valor_base,
   })) as HabilidadeCatalogo[];
 }
 
@@ -365,7 +368,8 @@ export async function criarHabilidade(
   categoriaId: string,
   nome: string,
   nomeInternacional: string | null,
-  descricao: string | null
+  descricao: string | null,
+  valorBase: number
 ) {
   const { error } = await supabase.from('habilidades_catalogo').insert({
     categoria_id: categoriaId,
@@ -373,19 +377,27 @@ export async function criarHabilidade(
     slug: slugify(nome),
     nome_internacional: nomeInternacional,
     descricao,
+    valor_base: valorBase,
   });
   if (error) throw error;
 }
 
 export async function atualizarHabilidade(
   id: string,
-  campos: Partial<{ nome: string; nomeInternacional: string | null; descricao: string | null; ativo: boolean }>
+  campos: Partial<{
+    nome: string;
+    nomeInternacional: string | null;
+    descricao: string | null;
+    ativo: boolean;
+    valorBase: number;
+  }>
 ) {
   const payload: Record<string, unknown> = {};
   if ('nome' in campos) payload.nome = campos.nome;
   if ('nomeInternacional' in campos) payload.nome_internacional = campos.nomeInternacional;
   if ('descricao' in campos) payload.descricao = campos.descricao;
   if ('ativo' in campos) payload.ativo = campos.ativo;
+  if ('valorBase' in campos) payload.valor_base = campos.valorBase;
 
   const { error } = await supabase.from('habilidades_catalogo').update(payload).eq('id', id);
   if (error) throw error;

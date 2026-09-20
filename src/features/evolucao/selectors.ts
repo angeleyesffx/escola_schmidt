@@ -142,6 +142,48 @@ export function getStatusOrdem(status: StatusHabilidadeEvolucao) {
   return STATUS_ORDEM[status];
 }
 
+// docs/product/evolucao-vs-desempenho.md §8.2 — mesmo principio das tabelas
+// oficiais de patinação: cada elemento tem um valor base, ajustado por um
+// fator de qualidade da execução, gerando a pontuação daquele elemento.
+// Equivalente simplificado ao "confirmado/não confirmado" oficial — não é
+// avaliação detalhada por critério (essa já usa percentual_geral/100 direto,
+// ver calcularPontuacaoAluno abaixo).
+const FATOR_QUALIDADE: Record<StatusHabilidadeEvolucao, number> = {
+  nao_iniciado: 0,
+  aprendendo: 0.25,
+  em_desenvolvimento: 0.5,
+  dominado: 0.85,
+  consolidado: 1,
+};
+
+// Pontuação do aluno no nível atual = soma de (valor_base × fator de
+// qualidade) de cada habilidade exigida no nível que já tem avaliação —
+// mesmo escopo de calcularProgressoNivel (itera sobre `requisitos`, não
+// sobre habilidades soltas), só que sem exigir status mínimo: aqui é
+// indicador de desempenho, não critério de "passou/não passou".
+//
+// Simplificação deliberada: `status_habilidade_aluno` não distingue se a
+// última avaliação foi rápida ou detalhada por critério (as duas gravam
+// `percentual_atual`), então o fator usa sempre o status — que já reflete
+// a avaliação detalhada por baixo (o status é derivado do percentual real
+// via `derivarStatusPorPercentual`), sem precisar de join novo só pra essa
+// distinção.
+export function calcularPontuacaoAluno(
+  requisitos: RequisitoNivelEvolucao[],
+  statusHabilidades: StatusAtualHabilidade[]
+): number {
+  const statusPorHabilidade = new Map(statusHabilidades.map((item) => [item.habilidadeId, item]));
+  let pontuacao = 0;
+
+  for (const requisito of requisitos) {
+    const status = statusPorHabilidade.get(requisito.habilidadeId);
+    if (!status) continue;
+    pontuacao += requisito.valorBase * FATOR_QUALIDADE[status.statusAtual];
+  }
+
+  return arredondar(pontuacao);
+}
+
 export function calcularPercentualCriterios(criterios: CriterioHabilidadeEvolucao[], valores: Record<string, number>) {
   let pesoTotal = 0;
   let pesoAtingido = 0;

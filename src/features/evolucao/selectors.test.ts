@@ -2,6 +2,7 @@ import {
   calcularFocoAtual,
   calcularFrequenciaPorPlano,
   calcularPercentualCriterios,
+  calcularPontuacaoAluno,
   calcularProgressoNivel,
   calcularResumoCategorias,
   derivarStatusPorPercentual,
@@ -19,6 +20,7 @@ const requisitos: RequisitoNivelEvolucao[] = [
     peso: 3,
     notaMinima: 70,
     statusMinimo: 'dominado',
+    valorBase: 10,
   },
   {
     habilidadeId: 'sit-spin',
@@ -29,6 +31,7 @@ const requisitos: RequisitoNivelEvolucao[] = [
     peso: 2,
     notaMinima: 60,
     statusMinimo: 'em_desenvolvimento',
+    valorBase: 6,
   },
   {
     habilidadeId: 'musicalidade',
@@ -39,6 +42,7 @@ const requisitos: RequisitoNivelEvolucao[] = [
     peso: 1,
     notaMinima: null,
     statusMinimo: 'aprendendo',
+    valorBase: 4,
   },
 ];
 
@@ -116,6 +120,21 @@ describe('evolucao selectors', () => {
       expect.objectContaining({ categoriaId: 'saltos', percentual: 100, emAtencao: 0 }),
     ]);
     expect(foco?.categoriaId).toBe('giros');
+  });
+
+  it('calcula pontuacao somando valor base ponderado pelo fator de qualidade do status', () => {
+    // salchow: dominado -> fator 0.85 x valorBase 10 = 8.5
+    // sit-spin: aprendendo -> fator 0.25 x valorBase 6 = 1.5
+    // musicalidade: aprendendo -> fator 0.25 x valorBase 4 = 1
+    const pontuacao = calcularPontuacaoAluno(requisitos, statusHabilidades);
+
+    expect(pontuacao).toBe(11);
+  });
+
+  it('ignora habilidades exigidas que ainda nao tem avaliacao registrada', () => {
+    const pontuacao = calcularPontuacaoAluno(requisitos, [statusHabilidades[0]]);
+
+    expect(pontuacao).toBe(8.5);
   });
 
   it('ordena status de evolucao de forma crescente', () => {
