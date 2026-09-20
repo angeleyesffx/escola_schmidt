@@ -120,6 +120,7 @@ export type ModalidadeEvolucao = {
   id: string;
   nome: string;
   slug: string;
+  ativo: boolean;
 };
 
 export type CategoriaCatalogo = {

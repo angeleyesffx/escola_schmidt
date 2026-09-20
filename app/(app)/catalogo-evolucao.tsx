@@ -15,8 +15,10 @@ import {
   adicionarRequisitoNivel,
   atualizarCategoria,
   atualizarHabilidade,
+  atualizarModalidade,
   criarCategoria,
   criarHabilidade,
+  criarModalidade,
   getCategoriasCatalogo,
   getHabilidadesCatalogo,
   getMetodologiasAtivas,
@@ -60,10 +62,13 @@ export default function CatalogoEvolucao() {
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
+  // --- Modalidades ---
+  const [mostrarFormModalidade, setMostrarFormModalidade] = useState(false);
+  const [nomeNovaModalidade, setNomeNovaModalidade] = useState('');
+
   // --- Categorias ---
   const [modalidadeNovaCategoria, setModalidadeNovaCategoria] = useState<string | null>(null);
   const [nomeNovaCategoria, setNomeNovaCategoria] = useState('');
-  const [ordemNovaCategoria, setOrdemNovaCategoria] = useState('1');
 
   // --- Habilidades ---
   const [categoriaNovaHabilidade, setCategoriaNovaHabilidade] = useState<string | null>(null);
@@ -78,11 +83,11 @@ export default function CatalogoEvolucao() {
   const [statusNovoRequisito, setStatusNovoRequisito] = useState<StatusHabilidadeEvolucao>('dominado');
   const [notaNovoRequisito, setNotaNovoRequisito] = useState('');
 
-  const { data: modalidades, loading: carregandoModalidades } = useAsyncData<ModalidadeEvolucao[]>(
-    getModalidadesEvolucao,
-    [],
-    { mensagemErro: 'Erro ao carregar modalidades.' }
-  );
+  const {
+    data: modalidades,
+    loading: carregandoModalidades,
+    reload: recarregarModalidades,
+  } = useAsyncData<ModalidadeEvolucao[]>(getModalidadesEvolucao, [], { mensagemErro: 'Erro ao carregar modalidades.' });
 
   const {
     data: categorias,
@@ -123,6 +128,37 @@ export default function CatalogoEvolucao() {
     return <Redirect href="/" />;
   }
 
+  async function adicionarModalidade() {
+    if (!nomeNovaModalidade.trim()) {
+      setErro('Informe o nome da modalidade.');
+      return;
+    }
+    setSalvando(true);
+    setErro(null);
+    try {
+      await criarModalidade(nomeNovaModalidade.trim(), null);
+      setNomeNovaModalidade('');
+      setMostrarFormModalidade(false);
+      await recarregarModalidades();
+    } catch (err) {
+      console.error(err);
+      setErro('Erro ao criar modalidade. Tente novamente.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function alternarAtivoModalidade(modalidade: ModalidadeEvolucao) {
+    setErro(null);
+    try {
+      await atualizarModalidade(modalidade.id, { ativo: !modalidade.ativo });
+      await recarregarModalidades();
+    } catch (err) {
+      console.error(err);
+      setErro('Erro ao atualizar modalidade. Tente novamente.');
+    }
+  }
+
   async function adicionarCategoria() {
     if (!modalidadeNovaCategoria || !nomeNovaCategoria.trim()) {
       setErro('Escolha a modalidade e informe o nome da categoria.');
@@ -131,14 +167,13 @@ export default function CatalogoEvolucao() {
     setSalvando(true);
     setErro(null);
     try {
-      await criarCategoria(
-        modalidadeNovaCategoria,
-        nomeNovaCategoria.trim(),
-        null,
-        Number(ordemNovaCategoria) || 0
-      );
+      // Ordem é só dica de exibição (ordenação da lista) — próxima posição
+      // dentro da mesma modalidade, calculada sozinha em vez de pedir pro
+      // dono adivinhar um número.
+      const proximaOrdem =
+        (categorias ?? []).filter((c) => c.modalidadeId === modalidadeNovaCategoria).length + 1;
+      await criarCategoria(modalidadeNovaCategoria, nomeNovaCategoria.trim(), null, proximaOrdem);
       setNomeNovaCategoria('');
-      setOrdemNovaCategoria('1');
       await recarregarCategorias();
     } catch (err) {
       console.error(err);
@@ -241,7 +276,7 @@ export default function CatalogoEvolucao() {
 
   const carregandoGeral = carregandoModalidades || carregandoCategorias || carregandoHabilidades || carregandoMetodologias;
 
-  const opcoesModalidades = (modalidades ?? []).map((m) => ({ value: m.id, label: m.nome }));
+  const opcoesModalidades = (modalidades ?? []).filter((m) => m.ativo).map((m) => ({ value: m.id, label: m.nome }));
   const opcoesCategorias = (categorias ?? [])
     .filter((c) => c.ativo)
     .map((c) => ({ value: c.id, label: c.nome, sublabel: c.modalidadeNome }));
@@ -278,53 +313,110 @@ export default function CatalogoEvolucao() {
 
         {!carregandoGeral && secaoAberta === 'categorias' ? (
           <View>
+            <Text style={styles.tituloSecao}>Modalidades</Text>
+            <Text style={styles.explicacao}>
+              Uma modalidade agrupa as categorias técnicas (ex.: "Livre"). A maioria das escolas usa só uma.
+            </Text>
+            {(modalidades ?? []).map((modalidade) => (
+              <View key={modalidade.id} style={styles.itemRow}>
+                <Text style={[type.body, styles.itemTextoWrap, !modalidade.ativo && styles.inativo]}>
+                  {modalidade.nome}
+                </Text>
+                <Switch value={modalidade.ativo} onValueChange={() => alternarAtivoModalidade(modalidade)} />
+              </View>
+            ))}
+
+            {mostrarFormModalidade ? (
+              <View style={styles.formCard}>
+                <Text style={styles.formTitulo}>Nova modalidade</Text>
+                <Text style={[type.label, styles.campoRotulo]}>Nome</Text>
+                <TextInput
+                  testID="catalogo-modalidade-nome"
+                  style={styles.input}
+                  value={nomeNovaModalidade}
+                  onChangeText={setNomeNovaModalidade}
+                  placeholder="Ex.: Dupla de Dança"
+                />
+                <View style={styles.formBotoes}>
+                  <TouchableOpacity
+                    style={styles.botaoSecundario}
+                    onPress={() => {
+                      setMostrarFormModalidade(false);
+                      setNomeNovaModalidade('');
+                    }}
+                  >
+                    <Text style={styles.botaoSecundarioTexto}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    testID="catalogo-modalidade-adicionar"
+                    style={[styles.botao, styles.botaoFlex, salvando && styles.botaoDesabilitado]}
+                    onPress={adicionarModalidade}
+                    disabled={salvando}
+                  >
+                    <Text style={styles.botaoTexto}>Criar modalidade</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity
+                testID="catalogo-modalidade-abrir-form"
+                style={styles.linkAdicionar}
+                onPress={() => setMostrarFormModalidade(true)}
+              >
+                <Text style={styles.linkAdicionarTexto}>+ Nova modalidade</Text>
+              </TouchableOpacity>
+            )}
+
+            <Text style={styles.tituloSecao}>Categorias</Text>
             {(categorias ?? []).map((categoria) => (
               <View key={categoria.id} style={styles.itemRow}>
                 <View style={styles.itemTextoWrap}>
                   <Text style={[type.body, !categoria.ativo && styles.inativo]}>{categoria.nome}</Text>
-                  <Text style={type.caption}>
-                    {categoria.modalidadeNome} · ordem {categoria.ordem}
-                  </Text>
+                  <Text style={type.caption}>{categoria.modalidadeNome}</Text>
                 </View>
                 <Switch value={categoria.ativo} onValueChange={() => alternarAtivoCategoria(categoria)} />
               </View>
             ))}
 
-            <Text style={styles.subtitulo}>Nova categoria</Text>
-            <Dropdown
-              testID="catalogo-categoria-modalidade"
-              placeholder="Modalidade"
-              options={opcoesModalidades}
-              value={modalidadeNovaCategoria}
-              onChange={setModalidadeNovaCategoria}
-            />
-            <TextInput
-              testID="catalogo-categoria-nome"
-              style={styles.input}
-              value={nomeNovaCategoria}
-              onChangeText={setNomeNovaCategoria}
-              placeholder="Nome da categoria"
-            />
-            <TextInput
-              style={styles.input}
-              value={ordemNovaCategoria}
-              onChangeText={setOrdemNovaCategoria}
-              placeholder="Ordem (número)"
-              keyboardType="numeric"
-            />
-            <TouchableOpacity
-              testID="catalogo-categoria-adicionar"
-              style={[styles.botao, salvando && styles.botaoDesabilitado]}
-              onPress={adicionarCategoria}
-              disabled={salvando}
-            >
-              <Text style={styles.botaoTexto}>Adicionar categoria</Text>
-            </TouchableOpacity>
+            <View style={styles.formCard}>
+              <Text style={styles.formTitulo}>Nova categoria</Text>
+              {opcoesModalidades.length === 0 ? (
+                <Text style={styles.avisoTexto}>Cadastre uma modalidade acima antes de criar uma categoria.</Text>
+              ) : (
+                <>
+                  <Text style={[type.label, styles.campoRotulo]}>Modalidade</Text>
+                  <Dropdown
+                    testID="catalogo-categoria-modalidade"
+                    placeholder="Escolha a modalidade"
+                    options={opcoesModalidades}
+                    value={modalidadeNovaCategoria}
+                    onChange={setModalidadeNovaCategoria}
+                  />
+                  <Text style={[type.label, styles.campoRotulo]}>Nome</Text>
+                  <TextInput
+                    testID="catalogo-categoria-nome"
+                    style={styles.input}
+                    value={nomeNovaCategoria}
+                    onChangeText={setNomeNovaCategoria}
+                    placeholder="Ex.: Figuras"
+                  />
+                  <TouchableOpacity
+                    testID="catalogo-categoria-adicionar"
+                    style={[styles.botao, salvando && styles.botaoDesabilitado]}
+                    onPress={adicionarCategoria}
+                    disabled={salvando}
+                  >
+                    <Text style={styles.botaoTexto}>Adicionar categoria</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
           </View>
         ) : null}
 
         {!carregandoGeral && secaoAberta === 'habilidades' ? (
           <View>
+            <Text style={styles.tituloSecao}>Habilidades</Text>
             {(habilidades ?? []).map((habilidade) => (
               <View key={habilidade.id} style={styles.itemRow}>
                 <View style={styles.itemTextoWrap}>
@@ -338,44 +430,59 @@ export default function CatalogoEvolucao() {
               </View>
             ))}
 
-            <Text style={styles.subtitulo}>Nova habilidade</Text>
-            <Dropdown
-              testID="catalogo-habilidade-categoria"
-              placeholder="Categoria"
-              options={opcoesCategorias}
-              value={categoriaNovaHabilidade}
-              onChange={setCategoriaNovaHabilidade}
-            />
-            <TextInput
-              testID="catalogo-habilidade-nome"
-              style={styles.input}
-              value={nomeNovaHabilidade}
-              onChangeText={setNomeNovaHabilidade}
-              placeholder="Nome da habilidade"
-            />
-            <TextInput
-              style={styles.input}
-              value={codigoNovaHabilidade}
-              onChangeText={setCodigoNovaHabilidade}
-              placeholder="Código oficial (opcional, ex.: FigA)"
-            />
-            <TouchableOpacity
-              testID="catalogo-habilidade-adicionar"
-              style={[styles.botao, salvando && styles.botaoDesabilitado]}
-              onPress={adicionarHabilidade}
-              disabled={salvando}
-            >
-              <Text style={styles.botaoTexto}>Adicionar habilidade</Text>
-            </TouchableOpacity>
+            <View style={styles.formCard}>
+              <Text style={styles.formTitulo}>Nova habilidade</Text>
+              {opcoesCategorias.length === 0 ? (
+                <Text style={styles.avisoTexto}>Cadastre uma categoria na aba "Categorias" antes de continuar.</Text>
+              ) : (
+                <>
+                  <Text style={[type.label, styles.campoRotulo]}>Categoria</Text>
+                  <Dropdown
+                    testID="catalogo-habilidade-categoria"
+                    placeholder="Escolha a categoria"
+                    options={opcoesCategorias}
+                    value={categoriaNovaHabilidade}
+                    onChange={setCategoriaNovaHabilidade}
+                  />
+                  <Text style={[type.label, styles.campoRotulo]}>Nome</Text>
+                  <TextInput
+                    testID="catalogo-habilidade-nome"
+                    style={styles.input}
+                    value={nomeNovaHabilidade}
+                    onChangeText={setNomeNovaHabilidade}
+                    placeholder="Ex.: Figura de alongamento"
+                  />
+                  <Text style={[type.label, styles.campoRotulo]}>Código oficial (opcional)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={codigoNovaHabilidade}
+                    onChangeText={setCodigoNovaHabilidade}
+                    placeholder="Ex.: FigA"
+                  />
+                  <TouchableOpacity
+                    testID="catalogo-habilidade-adicionar"
+                    style={[styles.botao, salvando && styles.botaoDesabilitado]}
+                    onPress={adicionarHabilidade}
+                    disabled={salvando}
+                  >
+                    <Text style={styles.botaoTexto}>Adicionar habilidade</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
           </View>
         ) : null}
 
         {!carregandoGeral && secaoAberta === 'requisitos' ? (
           <View>
-            <Text style={styles.subtitulo}>Metodologia e nível</Text>
+            <Text style={styles.tituloSecao}>Requisitos por nível</Text>
+            <Text style={styles.explicacao}>
+              Escolha a metodologia e o nível pra ver e editar quais habilidades são exigidas ali.
+            </Text>
+            <Text style={[type.label, styles.campoRotulo]}>Metodologia</Text>
             <Dropdown
               testID="catalogo-requisito-metodologia"
-              placeholder="Metodologia"
+              placeholder="Escolha a metodologia"
               options={(metodologias ?? []).map((m) => ({ value: m.id, label: m.nome }))}
               value={metodologiaSelecionada}
               onChange={(valor) => {
@@ -421,53 +528,59 @@ export default function CatalogoEvolucao() {
                     </View>
                   ))}
 
-                  <Text style={styles.subtitulo}>Novo requisito</Text>
-                  <Dropdown
-                    testID="catalogo-requisito-habilidade"
-                    placeholder="Habilidade"
-                    searchable
-                    options={opcoesHabilidadesDisponiveis}
-                    value={habilidadeNovoRequisito}
-                    onChange={setHabilidadeNovoRequisito}
-                    vazio="Todas as habilidades ativas já estão nesse nível."
-                  />
-                  <TextInput
-                    style={styles.input}
-                    value={pesoNovoRequisito}
-                    onChangeText={setPesoNovoRequisito}
-                    placeholder="Peso"
-                    keyboardType="numeric"
-                  />
-                  <View style={styles.chipsRow}>
-                    {STATUS_OPCOES.map((opcao) => (
-                      <TouchableOpacity
-                        key={opcao.valor}
-                        style={[styles.chip, statusNovoRequisito === opcao.valor && styles.chipAtivo]}
-                        onPress={() => setStatusNovoRequisito(opcao.valor)}
-                      >
-                        <Text
-                          style={[styles.chipTexto, statusNovoRequisito === opcao.valor && styles.chipTextoAtivo]}
+                  <View style={styles.formCard}>
+                    <Text style={styles.formTitulo}>Novo requisito</Text>
+                    <Text style={[type.label, styles.campoRotulo]}>Habilidade</Text>
+                    <Dropdown
+                      testID="catalogo-requisito-habilidade"
+                      placeholder="Escolha a habilidade"
+                      searchable
+                      options={opcoesHabilidadesDisponiveis}
+                      value={habilidadeNovoRequisito}
+                      onChange={setHabilidadeNovoRequisito}
+                      vazio="Todas as habilidades ativas já estão nesse nível."
+                    />
+                    <Text style={[type.label, styles.campoRotulo]}>Peso (quanto conta no progresso do nível)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={pesoNovoRequisito}
+                      onChangeText={setPesoNovoRequisito}
+                      placeholder="Ex.: 1"
+                      keyboardType="numeric"
+                    />
+                    <Text style={[type.label, styles.campoRotulo]}>Status mínimo pra contar como atingido</Text>
+                    <View style={styles.chipsRow}>
+                      {STATUS_OPCOES.map((opcao) => (
+                        <TouchableOpacity
+                          key={opcao.valor}
+                          style={[styles.chip, statusNovoRequisito === opcao.valor && styles.chipAtivo]}
+                          onPress={() => setStatusNovoRequisito(opcao.valor)}
                         >
-                          {opcao.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                          <Text
+                            style={[styles.chipTexto, statusNovoRequisito === opcao.valor && styles.chipTextoAtivo]}
+                          >
+                            {opcao.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    <Text style={[type.label, styles.campoRotulo]}>Nota mínima (opcional, 0-100)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={notaNovoRequisito}
+                      onChangeText={setNotaNovoRequisito}
+                      placeholder="Deixe em branco se não exigir nota"
+                      keyboardType="numeric"
+                    />
+                    <TouchableOpacity
+                      testID="catalogo-requisito-adicionar"
+                      style={[styles.botao, salvando && styles.botaoDesabilitado]}
+                      onPress={adicionarRequisito}
+                      disabled={salvando}
+                    >
+                      <Text style={styles.botaoTexto}>Adicionar requisito</Text>
+                    </TouchableOpacity>
                   </View>
-                  <TextInput
-                    style={styles.input}
-                    value={notaNovoRequisito}
-                    onChangeText={setNotaNovoRequisito}
-                    placeholder="Nota mínima (opcional, 0-100)"
-                    keyboardType="numeric"
-                  />
-                  <TouchableOpacity
-                    testID="catalogo-requisito-adicionar"
-                    style={[styles.botao, salvando && styles.botaoDesabilitado]}
-                    onPress={adicionarRequisito}
-                    disabled={salvando}
-                  >
-                    <Text style={styles.botaoTexto}>Adicionar requisito</Text>
-                  </TouchableOpacity>
                 </>
               )
             ) : (
@@ -545,12 +658,71 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textDecorationLine: 'line-through',
   },
-  subtitulo: {
-    color: colors.textMuted,
-    marginTop: spacing.lg,
+  tituloSecao: {
+    ...type.subtitle,
+    color: colors.text,
+    marginTop: spacing.xl,
     marginBottom: spacing.xs,
-    fontFamily: type.label.fontFamily,
-    fontSize: type.label.fontSize,
+  },
+  explicacao: {
+    ...type.caption,
+    color: colors.textMuted,
+    marginBottom: spacing.md,
+  },
+  formCard: {
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  formTitulo: {
+    ...type.subtitle,
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  campoRotulo: {
+    color: colors.textMuted,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  avisoTexto: {
+    ...type.caption,
+    color: colors.textMuted,
+  },
+  formBotoes: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  botaoFlex: {
+    flex: 1,
+    marginTop: 0,
+  },
+  botaoSecundario: {
+    height: touchTarget,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  botaoSecundarioTexto: {
+    color: colors.text,
+    fontFamily: type.subtitle.fontFamily,
+    fontSize: type.subtitle.fontSize,
+  },
+  linkAdicionar: {
+    minHeight: touchTarget,
+    justifyContent: 'center',
+    marginTop: spacing.xs,
+  },
+  linkAdicionarTexto: {
+    color: colors.primary,
+    fontFamily: type.subtitle.fontFamily,
+    fontSize: type.subtitle.fontSize,
   },
   input: {
     height: touchTarget,

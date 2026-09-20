@@ -291,13 +291,21 @@ export async function getAvaliacoesEvolucaoAluno(alunoId: string) {
 // ---------------------------------------------------------------------------
 
 export async function getModalidadesEvolucao() {
-  const { data, error } = await supabase
-    .from('modalidades_evolucao')
-    .select('id, nome, slug')
-    .eq('ativo', true)
-    .order('nome');
+  const { data, error } = await supabase.from('modalidades_evolucao').select('id, nome, slug, ativo').order('nome');
   if (error) throw error;
   return (data ?? []) as ModalidadeEvolucao[];
+}
+
+export async function criarModalidade(nome: string, descricao: string | null) {
+  const { error } = await supabase
+    .from('modalidades_evolucao')
+    .insert({ nome, slug: slugify(nome), descricao });
+  if (error) throw error;
+}
+
+export async function atualizarModalidade(id: string, campos: Partial<{ nome: string; ativo: boolean }>) {
+  const { error } = await supabase.from('modalidades_evolucao').update(campos).eq('id', id);
+  if (error) throw error;
 }
 
 export async function getCategoriasCatalogo() {
