@@ -5,12 +5,20 @@ import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TouchableOpacity,
 
 import { formatDataExtenso, formatDataISO, formatMesAno } from '../../../src/features/chamada/calendar';
 import { getEventosPorPeriodo, getTiposEvento } from '../../../src/features/eventos/api';
+import { ConfiguracaoFeriadosError, importarFeriados } from '../../../src/features/eventos/feriados';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
+import { Dropdown } from '../../../src/components/Dropdown';
 import { uiAssets } from '../../../src/constants/uiAssets';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
+
+const UFS = [
+  'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO',
+  'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI',
+  'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
+] as const;
 
 function primeiroDiaDoMes(referencia: Date) {
   return new Date(referencia.getFullYear(), referencia.getMonth(), 1);
@@ -22,19 +30,29 @@ function ultimoDiaDoMes(referencia: Date) {
 
 export default function EventosIndex() {
   const router = useRouter();
-  const { meuPapel } = useAuth();
+  const { meuPapel, session } = useAuth();
   const podeEditar = meuPapel === 'dono' || meuPapel === 'professor';
 
   const [mesReferencia, setMesReferencia] = useState(() => new Date());
+  const [importarAberto, setImportarAberto] = useState(false);
+  const [ufImportar, setUfImportar] = useState<string | null>(null);
+  const [importando, setImportando] = useState(false);
+  const [resultadoImportacao, setResultadoImportacao] = useState<string | null>(null);
+  const [erroImportacao, setErroImportacao] = useState<string | null>(null);
 
   const inicioMesISO = formatDataISO(primeiroDiaDoMes(mesReferencia));
   const fimMesISO = formatDataISO(ultimoDiaDoMes(mesReferencia));
+  const anoReferencia = mesReferencia.getFullYear();
 
-  const { data: tiposEvento } = useAsyncData(getTiposEvento, [], { onFocus: true });
+  const {
+    data: tiposEvento,
+    reload: recarregarTipos,
+  } = useAsyncData(getTiposEvento, [], { onFocus: true });
   const {
     data: eventos,
     loading,
     error,
+    reload: recarregarEventos,
   } = useAsyncData(() => getEventosPorPeriodo(inicioMesISO, fimMesISO), [inicioMesISO, fimMesISO], {
     onFocus: true,
     mensagemErro: 'Erro ao carregar eventos. Tente novamente.',
@@ -44,6 +62,34 @@ export default function EventosIndex() {
 
   function navegarMes(direcao: -1 | 1) {
     setMesReferencia((atual) => new Date(atual.getFullYear(), atual.getMonth() + direcao, 1));
+  }
+
+  async function confirmarImportacao() {
+    if (!ufImportar) {
+      setErroImportacao('Escolha o estado.');
+      return;
+    }
+    setImportando(true);
+    setErroImportacao(null);
+    setResultadoImportacao(null);
+    try {
+      const { total, importados } = await importarFeriados(ufImportar, anoReferencia, session?.user.id ?? null);
+      setResultadoImportacao(
+        importados === 0
+          ? `Nenhum feriado novo — os ${total} feriados de ${anoReferencia} já estavam importados.`
+          : `${importados} de ${total} feriados de ${anoReferencia} importados.`
+      );
+      await Promise.all([recarregarEventos(), recarregarTipos()]);
+    } catch (err) {
+      console.error(err);
+      setErroImportacao(
+        err instanceof ConfiguracaoFeriadosError
+          ? err.message
+          : 'Erro ao importar feriados. Tente novamente.'
+      );
+    } finally {
+      setImportando(false);
+    }
   }
 
   const cabecalho = (
@@ -59,8 +105,45 @@ export default function EventosIndex() {
 
       {podeEditar ? (
         <View style={styles.tituloRow}>
+          <TouchableOpacity
+            style={styles.importarBotao}
+            onPress={() => {
+              setImportarAberto((atual) => !atual);
+              setResultadoImportacao(null);
+              setErroImportacao(null);
+            }}
+          >
+            <Text style={styles.importarBotaoTexto}>Importar feriados de {anoReferencia}</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.eventoBotao} onPress={() => router.push('/chamada/novo-evento')}>
             <Text style={styles.eventoBotaoTexto}>+ Evento</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {podeEditar && importarAberto ? (
+        <View style={styles.importarCard}>
+          <Text style={[type.label, styles.rotuloImportar]}>Estado</Text>
+          <Dropdown
+            testID="eventos-importar-uf"
+            placeholder="Escolha o estado"
+            options={UFS.map((uf) => ({ value: uf, label: uf }))}
+            value={ufImportar}
+            onChange={setUfImportar}
+          />
+          {erroImportacao ? <Text style={[type.body, styles.error]}>{erroImportacao}</Text> : null}
+          {resultadoImportacao ? <Text style={[type.body, styles.sucessoImportacao]}>{resultadoImportacao}</Text> : null}
+          <TouchableOpacity
+            testID="eventos-importar-confirmar"
+            style={[styles.importarConfirmarBotao, importando && styles.botaoDesabilitado]}
+            onPress={confirmarImportacao}
+            disabled={importando}
+          >
+            {importando ? (
+              <ActivityIndicator color={colors.onPrimary} />
+            ) : (
+              <Text style={styles.eventoBotaoTexto}>Importar</Text>
+            )}
           </TouchableOpacity>
         </View>
       ) : null}
@@ -186,8 +269,10 @@ const styles = StyleSheet.create({
   },
   tituloRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'flex-end',
+    gap: spacing.sm,
     marginTop: spacing.md,
   },
   eventoBotao: {
@@ -202,6 +287,47 @@ const styles = StyleSheet.create({
     color: colors.onPrimary,
     fontFamily: type.subtitle.fontFamily,
     fontSize: type.subtitle.fontSize,
+  },
+  importarBotao: {
+    height: touchTarget,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  importarBotaoTexto: {
+    color: colors.primary,
+    fontFamily: type.subtitle.fontFamily,
+    fontSize: type.subtitle.fontSize,
+  },
+  importarCard: {
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  rotuloImportar: {
+    color: colors.textMuted,
+    marginBottom: spacing.xs,
+  },
+  sucessoImportacao: {
+    color: colors.present,
+    marginTop: spacing.sm,
+  },
+  importarConfirmarBotao: {
+    height: touchTarget,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.md,
+  },
+  botaoDesabilitado: {
+    opacity: 0.6,
   },
   periodoRow: {
     flexDirection: 'row',

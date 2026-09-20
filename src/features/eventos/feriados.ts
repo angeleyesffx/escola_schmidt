@@ -1,3 +1,5 @@
+import { criarEvento, getEventosPorPeriodo, getTiposEvento } from './api';
+
 export type FeriadoExterno = {
   id: string;
   data: string;
@@ -26,4 +28,37 @@ export async function buscarFeriadosEstado(uf: string, ano: number) {
   }
 
   return (await resposta.json()) as FeriadoExterno[];
+}
+
+// Orquestra o fluxo completo (docs/product/eventos.md §5.1): busca os
+// feriados do estado/ano, resolve o tipo "Feriado" já existente no seed de
+// tipos_evento (0003) e cria 1 evento de 1 dia por feriado — pulando os que
+// já existem (mesmo tipo+título+data_início) pra reimportar sem duplicar.
+export async function importarFeriados(uf: string, ano: number, criadoPor: string | null) {
+  const [feriados, tipos] = await Promise.all([
+    buscarFeriadosEstado(uf, ano),
+    getTiposEvento(),
+  ]);
+
+  const tipoFeriado = tipos.find((t) => t.nome === 'Feriado');
+  if (!tipoFeriado) {
+    throw new Error('Tipo de evento "Feriado" não encontrado. Cadastre-o antes de importar.');
+  }
+
+  const existentes = await getEventosPorPeriodo(`${ano}-01-01`, `${ano}-12-31`);
+  const jaImportado = new Set(
+    existentes
+      .filter((e) => e.tipo_id === tipoFeriado.id)
+      .map((e) => `${e.titulo}|${e.data_inicio}`)
+  );
+
+  let importados = 0;
+  for (const feriado of feriados) {
+    const chave = `${feriado.nome}|${feriado.data}`;
+    if (jaImportado.has(chave)) continue;
+    await criarEvento(tipoFeriado.id, feriado.nome, feriado.data, feriado.data, null, criadoPor);
+    importados += 1;
+  }
+
+  return { total: feriados.length, importados };
 }
