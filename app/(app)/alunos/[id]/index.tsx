@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import {
   desvincularPerfil,
@@ -17,18 +17,15 @@ import {
   getAvaliacoesAluno,
   getHabilidades,
   getTestesNivelAluno,
-  registrarAvaliacao,
-  registrarTesteNivel,
   type AvaliacaoDesempenho,
   type Habilidade,
   type NivelDesempenho,
   type TesteNivel,
 } from '../../../../src/features/desempenho/api';
 import { useAuth } from '../../../../src/features/auth/AuthProvider';
-import { hojeBR, paraBR, paraISO } from '../../../../src/lib/dataBR';
+import { paraBR } from '../../../../src/lib/dataBR';
 import { PageHeader } from '../../../../src/components/PageHeader';
 import { Footer } from '../../../../src/components/Footer';
-import { Chip } from '../../../../src/components/Chip';
 import { colors, radius, spacing, touchTarget, type } from '../../../../src/constants/theme';
 
 const ROTULO_STATUS: Record<RegistroFrequencia['status'], string> = {
@@ -48,8 +45,6 @@ const NIVEIS: { nivel: NivelDesempenho; label: string; legenda: string; cor: 'ab
   { nivel: 'conforme_esperado', label: '✓', legenda: 'Conforme esperado', cor: 'onTrack' },
   { nivel: 'excelente', label: '★', legenda: 'Excelente', cor: 'present' },
 ];
-
-const MODULOS = [1, 2, 3, 4] as const;
 
 type EventoTimeline =
   | { tipo: 'avaliacao'; data: string; itens: AvaliacaoDesempenho[] }
@@ -74,8 +69,7 @@ function montarTimeline(avaliacoes: AvaliacaoDesempenho[], testes: TesteNivel[])
 export default function AlunoDetalhe() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { session, meuPapel } = useAuth();
-  const podeEditar = meuPapel === 'dono' || meuPapel === 'professor';
+  const { meuPapel } = useAuth();
 
   const [aluno, setAluno] = useState<Aluno | null>(null);
   const [perfilVinculado, setPerfilVinculado] = useState<PerfilAluno | null>(null);
@@ -87,13 +81,6 @@ export default function AlunoDetalhe() {
   const [loading, setLoading] = useState(true);
   const [processando, setProcessando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const [dataAvaliacao, setDataAvaliacao] = useState(hojeBR());
-  const [mostrarTeste, setMostrarTeste] = useState(false);
-  const [moduloDestino, setModuloDestino] = useState<number>(1);
-  const [aprovado, setAprovado] = useState(true);
-  const [obsTeste, setObsTeste] = useState('');
-  const [salvandoTeste, setSalvandoTeste] = useState(false);
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -163,66 +150,6 @@ export default function AlunoDetalhe() {
     }
   }
 
-  function nivelAtual(habilidadeId: string): NivelDesempenho | undefined {
-    const dataISO = paraISO(dataAvaliacao);
-    if (!dataISO) return undefined;
-    return avaliacoes.find((a) => a.habilidade_id === habilidadeId && a.data === dataISO)?.nivel;
-  }
-
-  async function marcarHabilidade(habilidadeId: string, nivel: NivelDesempenho) {
-    const dataISO = paraISO(dataAvaliacao);
-    if (!dataISO) {
-      setError('Data inválida. Use o formato DD/MM/AAAA.');
-      return;
-    }
-    setError(null);
-    const anterior = avaliacoes;
-    const semEssaHabilidade = avaliacoes.filter(
-      (a) => !(a.habilidade_id === habilidadeId && a.data === dataISO)
-    );
-    setAvaliacoes([
-      ...semEssaHabilidade,
-      { id: `local-${habilidadeId}-${dataISO}`, habilidade_id: habilidadeId, data: dataISO, nivel, observacoes: null },
-    ]);
-    try {
-      await registrarAvaliacao(id, habilidadeId, dataISO, nivel, null, session?.user.id ?? null);
-    } catch (err) {
-      console.error(err);
-      setAvaliacoes(anterior);
-      setError('Erro ao salvar avaliação. Tente novamente.');
-    }
-  }
-
-  function abrirFormularioTeste() {
-    setModuloDestino(Math.min((aluno?.modulo ?? 1) + 1, 4));
-    setAprovado(true);
-    setObsTeste('');
-    setMostrarTeste((atual) => !atual);
-  }
-
-  async function salvarTeste() {
-    if (!aluno) return;
-    setSalvandoTeste(true);
-    setError(null);
-    try {
-      await registrarTesteNivel(
-        aluno.id,
-        aluno.modulo,
-        moduloDestino,
-        aprovado,
-        obsTeste.trim() || null,
-        session?.user.id ?? null
-      );
-      setMostrarTeste(false);
-      await carregar();
-    } catch (err) {
-      console.error(err);
-      setError('Erro ao registrar teste de nível. Tente novamente.');
-    } finally {
-      setSalvandoTeste(false);
-    }
-  }
-
   if (meuPapel === 'aluno') {
     return <Redirect href="/" />;
   }
@@ -258,6 +185,9 @@ export default function AlunoDetalhe() {
           <View style={styles.atalhosEvolucao}>
             <TouchableOpacity style={styles.atalhoSecundario} onPress={() => router.push(`/alunos/${id}/evolucao`)}>
               <Text style={styles.atalhoSecundarioTexto}>Minha Evolução</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.atalhoSecundario} onPress={() => router.push(`/alunos/${id}/desempenho`)}>
+              <Text style={styles.atalhoSecundarioTexto}>Jornada</Text>
             </TouchableOpacity>
           </View>
 
@@ -296,7 +226,11 @@ export default function AlunoDetalhe() {
             </View>
           )}
 
-          <Text style={[type.label, styles.secao]}>Desempenho</Text>
+          <Text style={[type.label, styles.secao]}>Desempenho (histórico legado)</Text>
+          <Text style={[type.body, styles.subtitle]}>
+            Sistema descontinuado — novas avaliações e passagens de nível são feitas em Minha Evolução. O histórico
+            abaixo fica preservado só para consulta.
+          </Text>
           <View style={styles.legenda}>
             {NIVEIS.map((n) => (
               <View key={n.nivel} style={styles.legendaItem}>
@@ -305,104 +239,6 @@ export default function AlunoDetalhe() {
               </View>
             ))}
           </View>
-
-          {podeEditar ? (
-            <View style={styles.edicao}>
-              <Text style={[type.label, styles.subsecao]}>Avaliar habilidades</Text>
-              <TextInput
-                style={styles.input}
-                value={dataAvaliacao}
-                onChangeText={setDataAvaliacao}
-                placeholder="DD/MM/AAAA"
-                keyboardType="numbers-and-punctuation"
-              />
-
-              {habilidades.map((h) => {
-                const atual = nivelAtual(h.id);
-                return (
-                  <View key={h.id} style={styles.habilidadeRow}>
-                    <Text style={[type.body, styles.habilidadeNome]} numberOfLines={2}>
-                      {h.nome}
-                    </Text>
-                    <View style={styles.botoes}>
-                      {NIVEIS.map((n) => {
-                        const ativo = atual === n.nivel;
-                        return (
-                          <TouchableOpacity
-                            key={n.nivel}
-                            style={[styles.botao, { backgroundColor: ativo ? colors[n.cor] : colors.pending }]}
-                            onPress={() => marcarHabilidade(h.id, n.nivel)}
-                          >
-                            <Text style={styles.botaoTexto}>{n.label}</Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  </View>
-                );
-              })}
-
-              <TouchableOpacity style={styles.testeBotao} onPress={abrirFormularioTeste}>
-                <Text style={styles.testeBotaoTexto}>
-                  {mostrarTeste ? 'Cancelar passagem de nível' : 'Registrar passagem de nível'}
-                </Text>
-              </TouchableOpacity>
-
-              {mostrarTeste ? (
-                <View style={styles.testeForm}>
-                  <Text style={[type.label, styles.subsecao]}>Módulo destino</Text>
-                  <View style={styles.chips}>
-                    {MODULOS.map((m) => (
-                      <Chip
-                        key={m}
-                        label={m}
-                        active={moduloDestino === m}
-                        onPress={() => setModuloDestino(m)}
-                        variant="background"
-                        square
-                      />
-                    ))}
-                  </View>
-
-                  <View style={styles.chips}>
-                    <Chip
-                      label="Aprovado"
-                      active={aprovado}
-                      onPress={() => setAprovado(true)}
-                      variant="background"
-                      square
-                    />
-                    <Chip
-                      label="Não aprovado"
-                      active={!aprovado}
-                      onPress={() => setAprovado(false)}
-                      variant="background"
-                      square
-                    />
-                  </View>
-
-                  <TextInput
-                    style={styles.input}
-                    value={obsTeste}
-                    onChangeText={setObsTeste}
-                    placeholder="Observações (opcional)"
-                  />
-
-                  <TouchableOpacity
-                    style={[styles.salvarBotao, salvandoTeste && styles.botaoDesabilitado]}
-                    onPress={salvarTeste}
-                    disabled={salvandoTeste}
-                  >
-                    {salvandoTeste ? (
-                      <ActivityIndicator color={colors.onPrimary} />
-                    ) : (
-                      <Text style={styles.salvarBotaoTexto}>Salvar teste de nível</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              ) : null}
-            </View>
-          ) : null}
 
           <Text style={[type.label, styles.subsecao]}>Linha do tempo</Text>
           {eventosDesempenho.length === 0 ? (
@@ -524,10 +360,13 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   atalhosEvolucao: {
+    flexDirection: 'row',
+    gap: spacing.sm,
     marginTop: spacing.md,
     marginBottom: spacing.xs,
   },
   atalhoSecundario: {
+    flex: 1,
     minHeight: touchTarget,
     borderRadius: radius.md,
     borderWidth: 1,
@@ -611,91 +450,8 @@ const styles = StyleSheet.create({
   legendaTexto: {
     color: colors.textMuted,
   },
-  edicao: {
-    marginTop: spacing.sm,
-  },
-  input: {
-    height: touchTarget,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    backgroundColor: colors.surface,
-    fontFamily: type.body.fontFamily,
-    fontSize: type.body.fontSize,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  habilidadeRow: {
-    minHeight: touchTarget,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  habilidadeNome: {
-    flex: 1,
-    marginRight: spacing.sm,
-  },
-  botoes: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  botao: {
-    width: touchTarget,
-    height: touchTarget,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  botaoTexto: {
-    color: colors.onPrimary,
-    fontFamily: type.subtitle.fontFamily,
-    fontSize: type.subtitle.fontSize,
-  },
   botaoDesabilitado: {
     opacity: 0.6,
-  },
-  testeBotao: {
-    minHeight: touchTarget,
-    justifyContent: 'center',
-    marginTop: spacing.sm,
-  },
-  testeBotaoTexto: {
-    color: colors.primary,
-    fontFamily: type.subtitle.fontFamily,
-    fontSize: type.subtitle.fontSize,
-  },
-  testeForm: {
-    marginTop: spacing.sm,
-    padding: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  chips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  salvarBotao: {
-    height: touchTarget,
-    borderRadius: radius.md,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  salvarBotaoTexto: {
-    color: colors.onPrimary,
-    fontFamily: type.subtitle.fontFamily,
-    fontSize: type.subtitle.fontSize,
   },
   linha: {
     flexDirection: 'row',

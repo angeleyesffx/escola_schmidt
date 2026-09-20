@@ -73,6 +73,17 @@ export type HistoricoNivelEvolucao = {
   tipo: 'atribuicao_inicial' | 'pronto_para_avaliacao' | 'aprovado' | 'reprovado' | 'promovido';
   dataEvento: string;
   nivelId: string;
+  nivelNome: string | null;
+  observacoes: string | null;
+};
+
+export type AvaliacaoEvolucaoResumo = {
+  id: string;
+  habilidadeId: string;
+  habilidadeNome: string;
+  dataAvaliacao: string;
+  status: StatusHabilidadeEvolucao;
+  percentualGeral: number | null;
   observacoes: string | null;
 };
 

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   ActivityIndicator,
   Image,
@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 
 import { Dropdown } from '../../components/Dropdown';
+import { RadarChart } from '../../components/RadarChart';
 import { PageHeader } from '../../components/PageHeader';
 import { Footer } from '../../components/Footer';
 import { colors, radius, spacing, type } from '../../constants/theme';
@@ -90,6 +91,7 @@ function labelTipoHistorico(tipoHistorico: HistoricoNivelEvolucao['tipo']) {
 }
 
 export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar = false, professorId = null }: EvolucaoScreenProps) {
+  const router = useRouter();
   const { width } = useWindowDimensions();
   const heroAltura = 168;
   const heroCardLargura = width - spacing.xl * 2;
@@ -530,6 +532,19 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
               <View style={styles.cardBase}>
                 <Text style={styles.cardTag}>Radar pedagógico</Text>
                 <Text style={styles.cardTexto}>Resumo por macroárea</Text>
+
+                {progresso.resumoCategorias.length >= 3 ? (
+                  <View style={styles.radarWrap}>
+                    <RadarChart
+                      eixos={progresso.resumoCategorias.map((categoria) => ({
+                        id: categoria.categoriaId,
+                        label: categoria.categoriaNome,
+                        percentual: categoria.percentual,
+                      }))}
+                    />
+                  </View>
+                ) : null}
+
                 {progresso.resumoCategorias.map((categoria) => (
                   <View key={categoria.categoriaId} style={styles.linhaCategoria}>
                     <View style={styles.linhaCategoriaTopo}>
@@ -694,6 +709,12 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
                     {evento.observacoes ? <Text style={styles.cardTexto}>{evento.observacoes}</Text> : null}
                   </View>
                 ))}
+                <TouchableOpacity
+                  testID="evolucao-link-jornada-completa"
+                  onPress={() => router.push(`/alunos/${alunoId}/desempenho`)}
+                >
+                  <Text style={styles.verJornadaLink}>Ver jornada completa</Text>
+                </TouchableOpacity>
               </View>
             ) : null}
           </>
@@ -793,6 +814,10 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: radius.pill,
     backgroundColor: colors.primary,
+  },
+  radarWrap: {
+    alignItems: 'center',
+    marginVertical: spacing.md,
   },
   linhaCategoria: {
     gap: spacing.xs,
@@ -977,6 +1002,11 @@ const styles = StyleSheet.create({
   historicoData: {
     ...type.caption,
     color: colors.textMuted,
+  },
+  verJornadaLink: {
+    ...type.caption,
+    color: colors.primary,
+    marginTop: spacing.sm,
   },
   erro: {
     ...type.body,

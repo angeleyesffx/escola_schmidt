@@ -2,6 +2,7 @@ import { supabase } from '../../lib/supabase';
 
 import type {
   AvaliacaoDetalhadaEvolucaoInput,
+  AvaliacaoEvolucaoResumo,
   AvaliacaoRapidaEvolucaoInput,
   CriterioHabilidadeEvolucao,
   HistoricoNivelEvolucao,
@@ -236,7 +237,7 @@ export async function registrarAvaliacaoDetalhadaEvolucao(input: AvaliacaoDetalh
 export async function getHistoricoNivelAluno(alunoId: string) {
   const { data, error } = await supabase
     .from('historico_nivel_evolucao')
-    .select('id, tipo, data_evento, nivel_id, observacoes')
+    .select('id, tipo, data_evento, nivel_id, observacoes, niveis_evolucao(nome)')
     .eq('aluno_id', alunoId)
     .order('data_evento', { ascending: false })
     .order('criado_em', { ascending: false });
@@ -248,6 +249,32 @@ export async function getHistoricoNivelAluno(alunoId: string) {
     tipo: item.tipo,
     dataEvento: item.data_evento,
     nivelId: item.nivel_id,
+    nivelNome: primeiroItem<{ nome: string }>(item.niveis_evolucao)?.nome ?? null,
     observacoes: item.observacoes,
   })) as HistoricoNivelEvolucao[];
+}
+
+// Alimenta a tela de Jornada (alunos/[id]/jornada.tsx) — histórico completo
+// de avaliações por habilidade, cruzado com o histórico de nível acima pra
+// montar a timeline. Diferente de getStatusHabilidadesAluno (só o snapshot
+// atual), aqui é toda a série de avaliações registradas.
+export async function getAvaliacoesEvolucaoAluno(alunoId: string) {
+  const { data, error } = await supabase
+    .from('avaliacoes_evolucao')
+    .select('id, habilidade_id, data_avaliacao, status, percentual_geral, observacoes, habilidades_catalogo(nome)')
+    .eq('aluno_id', alunoId)
+    .order('data_avaliacao', { ascending: false })
+    .order('criado_em', { ascending: false });
+
+  if (error) throw error;
+
+  return (data ?? []).map((item: any) => ({
+    id: item.id,
+    habilidadeId: item.habilidade_id,
+    habilidadeNome: primeiroItem<{ nome: string }>(item.habilidades_catalogo)?.nome ?? 'Habilidade',
+    dataAvaliacao: item.data_avaliacao,
+    status: item.status,
+    percentualGeral: item.percentual_geral,
+    observacoes: item.observacoes,
+  })) as AvaliacaoEvolucaoResumo[];
 }
