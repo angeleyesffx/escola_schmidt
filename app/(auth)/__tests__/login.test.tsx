@@ -60,7 +60,20 @@ describe('Login', () => {
     await fireEvent.press(screen.getByTestId('login-button-entrar'));
 
     await waitFor(() => {
-      expect(mockSignIn).toHaveBeenCalledWith('pessoa@escola.com', 'segredo');
+      expect(mockSignIn).toHaveBeenCalledWith('pessoa@escola.com', 'segredo', true);
+    });
+  });
+
+  it('passes lembrar=false when the "remember me" checkbox is unchecked', async () => {
+    await render(<Login />);
+
+    await fireEvent.changeText(screen.getByTestId('login-input-email'), 'pessoa@escola.com');
+    await fireEvent.changeText(screen.getByTestId('login-input-senha'), 'segredo');
+    await fireEvent.press(screen.getByTestId('login-checkbox-lembrar'));
+    await fireEvent.press(screen.getByTestId('login-button-entrar'));
+
+    await waitFor(() => {
+      expect(mockSignIn).toHaveBeenCalledWith('pessoa@escola.com', 'segredo', false);
     });
   });
 
@@ -127,5 +140,15 @@ describe('Login', () => {
     await fireEvent.press(screen.getByTestId('login-input-senha-toggle'));
 
     expect(screen.getByTestId('login-input-senha').props.secureTextEntry).toBe(false);
+  });
+
+  it('starts with "remember me" checked and allows unchecking it', async () => {
+    await render(<Login />);
+
+    expect(screen.getByText('✓')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('login-checkbox-lembrar'));
+
+    expect(screen.queryByText('✓')).toBeNull();
   });
 });

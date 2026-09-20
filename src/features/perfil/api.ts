@@ -19,10 +19,13 @@ export async function getMeuPerfil(userId: string) {
   return data as MeuPerfil;
 }
 
-export async function atualizarMeuPerfil(userId: string, payload: { nome: string; telefone: string | null }) {
-  const { error } = await supabase
-    .from('perfis')
-    .update({ nome: payload.nome, telefone: payload.telefone })
-    .eq('id', userId);
+// Passa pela RPC porque a policy de auto-edição de `perfis` foi removida
+// (supabase/migrations/0017) — sem coluna restrita, ela deixava qualquer
+// usuário alterar o próprio papel/ativo direto pelo client.
+export async function atualizarMeuPerfil(payload: { nome: string; telefone: string | null }) {
+  const { error } = await supabase.rpc('atualizar_meu_perfil', {
+    p_nome: payload.nome,
+    p_telefone: payload.telefone,
+  });
   if (error) throw error;
 }

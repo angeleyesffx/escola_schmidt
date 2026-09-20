@@ -1,6 +1,8 @@
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient, type SupportedStorage } from '@supabase/supabase-js';
+
+import { storageComLembrarMe } from './rememberMeStorage';
 
 export const MISSING_ENV_ERROR =
   'Faltam EXPO_PUBLIC_SUPABASE_URL e EXPO_PUBLIC_SUPABASE_ANON_KEY. Copie .env.example para .env e preencha.';
@@ -28,7 +30,7 @@ export function getSupabaseConfig(
   return { supabaseUrl, supabaseAnonKey };
 }
 
-export function createSupabaseOptions(storage: typeof AsyncStorage = AsyncStorage) {
+export function createSupabaseOptions(storage: SupportedStorage = AsyncStorage) {
   return {
     auth: {
       storage,
@@ -43,7 +45,7 @@ export function createSupabaseOptions(storage: typeof AsyncStorage = AsyncStorag
 export function createSupabaseClient(
   supabaseUrl: string,
   supabaseAnonKey: string,
-  storage: typeof AsyncStorage = AsyncStorage
+  storage: SupportedStorage = AsyncStorage
 ) {
   return createClient(supabaseUrl, supabaseAnonKey, createSupabaseOptions(storage));
 }
@@ -64,7 +66,7 @@ function createMissingConfigClient(): SupabaseClient {
 function createSingletonClient(): SupabaseClient {
   try {
     const { supabaseUrl, supabaseAnonKey } = getSupabaseConfig();
-    return createSupabaseClient(supabaseUrl, supabaseAnonKey);
+    return createSupabaseClient(supabaseUrl, supabaseAnonKey, storageComLembrarMe);
   } catch {
     return createMissingConfigClient();
   }

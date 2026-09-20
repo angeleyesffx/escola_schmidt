@@ -16,6 +16,8 @@ import { convidarAluno, criarAluno, type Plano } from '../../../src/features/alu
 import { useAuth } from '../../../src/features/auth/AuthProvider';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
+import { Chip } from '../../../src/components/Chip';
+import { hojeBR, paraISO } from '../../../src/lib/dataBR';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -27,22 +29,6 @@ const PLANOS: { valor: Plano; label: string; meses: number }[] = [
   { valor: 'semestral', label: 'Semestral', meses: 6 },
   { valor: 'anual', label: 'Anual', meses: 12 },
 ];
-
-// Entrada sempre em DD/MM/AAAA (mais natural pra digitar); convertido pra
-// AAAA-MM-DD só na hora de gravar, que é o formato que o Postgres espera.
-function paraISO(dataBR: string): string | null {
-  const m = dataBR.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!m) return null;
-  const [, dia, mes, ano] = m;
-  return `${ano}-${mes}-${dia}`;
-}
-
-function hojeBR(): string {
-  const d = new Date();
-  const dia = String(d.getDate()).padStart(2, '0');
-  const mes = String(d.getMonth() + 1).padStart(2, '0');
-  return `${dia}/${mes}/${d.getFullYear()}`;
-}
 
 function somaMeses(dataBR: string, meses: number): string {
   const m = dataBR.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -112,6 +98,10 @@ export default function NovoAluno() {
           modulo,
           responsavel_nome: responsavelNome.trim() || null,
           responsavel_telefone: responsavelTelefone.trim() || null,
+          // Guardado mesmo quando o convite abaixo não é enviado agora: é
+          // contra esse e-mail que o cadastro público se vincula sozinho
+          // depois, sem precisar de convite nem de vínculo manual.
+          responsavel_email: emailAcesso.trim() || null,
         },
         { plano, data_inicio: inicioISO, data_fim: fimISO }
       );
@@ -164,13 +154,7 @@ export default function NovoAluno() {
         <Text style={[type.label, styles.rotulo]}>Módulo</Text>
         <View style={styles.chips}>
           {MODULOS.map((m) => (
-            <TouchableOpacity
-              key={m}
-              style={[styles.chip, modulo === m && styles.chipAtivo]}
-              onPress={() => setModulo(m)}
-            >
-              <Text style={[styles.chipTexto, modulo === m && styles.chipTextoAtivo]}>{m}</Text>
-            </TouchableOpacity>
+            <Chip key={m} label={m} active={modulo === m} onPress={() => setModulo(m)} square />
           ))}
         </View>
 
@@ -189,7 +173,7 @@ export default function NovoAluno() {
           keyboardType="phone-pad"
         />
 
-        <Text style={[type.label, styles.rotulo]}>Email de acesso ao aplicativo (opcional)</Text>
+        <Text style={[type.label, styles.rotulo]}>Email do responsável (opcional)</Text>
         <TextInput
           style={styles.input}
           value={emailAcesso}
@@ -200,20 +184,15 @@ export default function NovoAluno() {
           keyboardType="email-address"
         />
         <Text style={[type.caption, styles.dicaEmail]}>
-          Se preenchido, o aluno (ou responsável) recebe um convite por email pra criar a própria senha e acessar o
-          app.
+          Preenchendo, o aluno (ou responsável) já recebe um convite por email pra criar a própria senha agora. Se
+          ele preferir se cadastrar sozinho depois, o app vincula a conta automaticamente por esse mesmo email — sem
+          precisar de convite nem de vínculo manual.
         </Text>
 
         <Text style={[type.label, styles.rotulo]}>Plano</Text>
         <View style={styles.chips}>
           {PLANOS.map((p) => (
-            <TouchableOpacity
-              key={p.valor}
-              style={[styles.chip, plano === p.valor && styles.chipAtivo]}
-              onPress={() => escolherPlano(p.valor)}
-            >
-              <Text style={[styles.chipTexto, plano === p.valor && styles.chipTextoAtivo]}>{p.label}</Text>
-            </TouchableOpacity>
+            <Chip key={p.valor} label={p.label} active={plano === p.valor} onPress={() => escolherPlano(p.valor)} />
           ))}
         </View>
 
@@ -293,29 +272,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
-  },
-  chip: {
-    minHeight: touchTarget,
-    minWidth: touchTarget,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chipAtivo: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  chipTexto: {
-    fontFamily: type.subtitle.fontFamily,
-    fontSize: type.subtitle.fontSize,
-    color: colors.text,
-  },
-  chipTextoAtivo: {
-    color: colors.onPrimary,
   },
   dicaEmail: {
     color: colors.textMuted,

@@ -25,8 +25,10 @@ import {
   type TesteNivel,
 } from '../../../../src/features/desempenho/api';
 import { useAuth } from '../../../../src/features/auth/AuthProvider';
+import { hojeBR, paraBR, paraISO } from '../../../../src/lib/dataBR';
 import { PageHeader } from '../../../../src/components/PageHeader';
 import { Footer } from '../../../../src/components/Footer';
+import { Chip } from '../../../../src/components/Chip';
 import { colors, radius, spacing, touchTarget, type } from '../../../../src/constants/theme';
 
 const ROTULO_STATUS: Record<RegistroFrequencia['status'], string> = {
@@ -48,30 +50,6 @@ const NIVEIS: { nivel: NivelDesempenho; label: string; legenda: string; cor: 'ab
 ];
 
 const MODULOS = [1, 2, 3, 4] as const;
-
-function formatDataFrequencia(dataISO: string) {
-  const [ano, mes, dia] = dataISO.split('-');
-  return `${dia}/${mes}/${ano}`;
-}
-
-function hojeBR(): string {
-  const d = new Date();
-  const dia = String(d.getDate()).padStart(2, '0');
-  const mes = String(d.getMonth() + 1).padStart(2, '0');
-  return `${dia}/${mes}/${d.getFullYear()}`;
-}
-
-function paraISO(dataBR: string): string | null {
-  const m = dataBR.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!m) return null;
-  const [, dia, mes, ano] = m;
-  return `${ano}-${mes}-${dia}`;
-}
-
-function formatDataDesempenho(dataISO: string) {
-  const [ano, mes, dia] = dataISO.split('-');
-  return `${dia}/${mes}/${ano}`;
-}
 
 type EventoTimeline =
   | { tipo: 'avaliacao'; data: string; itens: AvaliacaoDesempenho[] }
@@ -308,7 +286,7 @@ export default function AlunoDetalhe() {
               {registrosFrequencia.map((item, index) => (
                 <View key={`${item.data}-${item.hora}-${index}`} style={styles.row}>
                   <Text style={type.body}>
-                    {formatDataFrequencia(item.data)} · {item.hora}
+                    {paraBR(item.data)} · {item.hora}
                   </Text>
                   <Text style={[type.label, { color: colors[COR_STATUS[item.status]] }]}>
                     {ROTULO_STATUS[item.status]}
@@ -375,29 +353,32 @@ export default function AlunoDetalhe() {
                   <Text style={[type.label, styles.subsecao]}>Módulo destino</Text>
                   <View style={styles.chips}>
                     {MODULOS.map((m) => (
-                      <TouchableOpacity
+                      <Chip
                         key={m}
-                        style={[styles.chip, moduloDestino === m && styles.chipAtivo]}
+                        label={m}
+                        active={moduloDestino === m}
                         onPress={() => setModuloDestino(m)}
-                      >
-                        <Text style={[styles.chipTexto, moduloDestino === m && styles.chipTextoAtivo]}>{m}</Text>
-                      </TouchableOpacity>
+                        variant="background"
+                        square
+                      />
                     ))}
                   </View>
 
                   <View style={styles.chips}>
-                    <TouchableOpacity
-                      style={[styles.chip, aprovado && styles.chipAtivo]}
+                    <Chip
+                      label="Aprovado"
+                      active={aprovado}
                       onPress={() => setAprovado(true)}
-                    >
-                      <Text style={[styles.chipTexto, aprovado && styles.chipTextoAtivo]}>Aprovado</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.chip, !aprovado && styles.chipAtivo]}
+                      variant="background"
+                      square
+                    />
+                    <Chip
+                      label="Não aprovado"
+                      active={!aprovado}
                       onPress={() => setAprovado(false)}
-                    >
-                      <Text style={[styles.chipTexto, !aprovado && styles.chipTextoAtivo]}>Não aprovado</Text>
-                    </TouchableOpacity>
+                      variant="background"
+                      square
+                    />
                   </View>
 
                   <TextInput
@@ -437,7 +418,7 @@ export default function AlunoDetalhe() {
                     {!ultimo ? <View style={styles.conector} /> : null}
                   </View>
                   <View style={styles.conteudo}>
-                    <Text style={[type.caption, styles.dataTexto]}>{formatDataDesempenho(item.data)}</Text>
+                    <Text style={[type.caption, styles.dataTexto]}>{paraBR(item.data)}</Text>
                     {item.tipo === 'avaliacao' ? (
                       <View style={styles.cartao}>
                         <View style={styles.chipsAvaliacao}>
@@ -703,29 +684,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.sm,
     marginBottom: spacing.md,
-  },
-  chip: {
-    minHeight: touchTarget,
-    minWidth: touchTarget,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chipAtivo: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  chipTexto: {
-    fontFamily: type.subtitle.fontFamily,
-    fontSize: type.subtitle.fontSize,
-    color: colors.text,
-  },
-  chipTextoAtivo: {
-    color: colors.onPrimary,
   },
   salvarBotao: {
     height: touchTarget,

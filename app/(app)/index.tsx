@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 
-import { getAulasRecorrentesHoje, type AulaRecorrente } from '../../src/features/chamada/api';
+import { getAulasRecorrentesHoje } from '../../src/features/chamada/api';
 import { useAuth } from '../../src/features/auth/AuthProvider';
+import { useAsyncData } from '../../src/hooks/useAsyncData';
 import { PageHeader } from '../../src/components/PageHeader';
 import { Footer } from '../../src/components/Footer';
 import { colors, radius, spacing, touchTarget, type } from '../../src/constants/theme';
@@ -44,20 +44,8 @@ export default function Home() {
   const imagemIcone = imagemLado + 6;
   const cardPadding = width >= 900 ? spacing.xl : spacing.lg;
 
-  const [aulasHoje, setAulasHoje] = useState<AulaRecorrente[]>([]);
-
-  useEffect(() => {
-    if (souAluno) return;
-    let ativo = true;
-    getAulasRecorrentesHoje(new Date().getDay())
-      .then((dados) => {
-        if (ativo) setAulasHoje(dados);
-      })
-      .catch((err) => console.error(err));
-    return () => {
-      ativo = false;
-    };
-  }, [souAluno]);
+  const { data } = useAsyncData(() => getAulasRecorrentesHoje(new Date().getDay()), [], { enabled: !souAluno });
+  const aulasHoje = data ?? [];
 
   function abrirListaChamada() {
     if (aulasHoje.length === 1) {
@@ -88,7 +76,7 @@ export default function Home() {
               <Text style={styles.heroTag}>Painel</Text>
               <Text style={styles.heroTitulo}>Bem-vinda à Escola Schmidt</Text>
               <Text style={styles.heroTexto}>
-                {souAluno ? 'Acesse seu calendário e acompanhe seu progresso.' : 'Organize chamadas e acompanhe suas turmas.'}
+                {souAluno ? 'Acesse sua agenda e acompanhe seu progresso.' : 'Organize chamadas e acompanhe suas turmas.'}
               </Text>
             </View>
           </View>
@@ -102,10 +90,10 @@ export default function Home() {
             <View style={[styles.cardImagemWrap, { width: imagemLado, height: imagemLado }]}> 
               <Image source={CARD_ILUSTRACOES.calendario} style={[styles.cardImagem, { width: imagemIcone, height: imagemIcone }]} />
             </View>
-            <Text style={styles.cardTitulo}>Calendário</Text>
+            <Text style={styles.cardTitulo}>Agenda</Text>
             <Text style={styles.cardTexto}>Visualize semanas, meses e eventos.</Text>
             <View style={styles.cardAcaoRodape}>
-              <Text style={styles.cardAcaoTexto}>Acessar calendário</Text>
+              <Text style={styles.cardAcaoTexto}>Acessar agenda</Text>
               <View style={styles.cardAcaoSetaWrap}>
                 <Text style={styles.cardAcaoSeta}>›</Text>
               </View>

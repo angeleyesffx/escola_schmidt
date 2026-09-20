@@ -10,6 +10,7 @@ export type Aluno = {
   modulo: number;
   responsavel_nome: string | null;
   responsavel_telefone: string | null;
+  responsavel_email: string | null;
   ativo: boolean;
   perfil_id: string | null;
 };
@@ -27,6 +28,10 @@ export type NovoAluno = {
   modulo: number;
   responsavel_nome: string | null;
   responsavel_telefone: string | null;
+  // Contra esse e-mail (normalizado) o gatilho `vincula_aluno_por_email` casa
+  // o cadastro público automaticamente — sem isso, a conta nasce órfã e
+  // precisa do vínculo manual na ficha do aluno.
+  responsavel_email: string | null;
 };
 
 export type NovoContrato = {
@@ -38,7 +43,9 @@ export type NovoContrato = {
 export async function getAlunos() {
   const { data, error } = await supabase
     .from('alunos')
-    .select('id, nome, data_nascimento, modulo, responsavel_nome, responsavel_telefone, ativo, perfil_id')
+    .select(
+      'id, nome, data_nascimento, modulo, responsavel_nome, responsavel_telefone, responsavel_email, ativo, perfil_id'
+    )
     .order('nome');
   if (error) throw error;
   return data as Aluno[];
@@ -47,7 +54,9 @@ export async function getAlunos() {
 export async function getAluno(id: string) {
   const { data, error } = await supabase
     .from('alunos')
-    .select('id, nome, data_nascimento, modulo, responsavel_nome, responsavel_telefone, ativo, perfil_id')
+    .select(
+      'id, nome, data_nascimento, modulo, responsavel_nome, responsavel_telefone, responsavel_email, ativo, perfil_id'
+    )
     .eq('id', id)
     .single();
   if (error) throw error;

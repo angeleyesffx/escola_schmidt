@@ -1,6 +1,7 @@
 const mockEq = jest.fn();
 const mockSelect = jest.fn();
 const mockUpdate = jest.fn();
+const mockRpc = jest.fn();
 const mockFrom = jest.fn((_table: string) => ({
   select: mockSelect,
   update: mockUpdate,
@@ -9,6 +10,7 @@ const mockFrom = jest.fn((_table: string) => ({
 jest.mock('../../lib/supabase', () => ({
   supabase: {
     from: (table: string) => mockFrom(table),
+    rpc: (fn: string, args: unknown) => mockRpc(fn, args),
   },
 }));
 
@@ -20,6 +22,7 @@ describe('perfil api', () => {
     mockSelect.mockClear();
     mockUpdate.mockClear();
     mockEq.mockClear();
+    mockRpc.mockClear();
 
     mockSelect.mockReturnValue({ eq: mockEq });
     mockUpdate.mockReturnValue({ eq: mockEq });
@@ -47,24 +50,29 @@ describe('perfil api', () => {
     expect(perfil.nome).toBe('Ana Silva');
   });
 
-  it('updates profile name and phone', async () => {
-    mockEq.mockResolvedValueOnce({ error: null });
+  // A policy de auto-edição de `perfis` foi removida (supabase/migrations/0017)
+  // por não restringir colunas — atualizarMeuPerfil passou a chamar a RPC
+  // atualizar_meu_perfil (SECURITY DEFINER, restrita a nome/telefone), que
+  // identifica o usuário por auth.uid() no banco em vez de receber o id aqui.
+  it('updates profile name and phone via RPC', async () => {
+    mockRpc.mockResolvedValueOnce({ error: null });
 
-    await atualizarMeuPerfil('user-1', {
+    await atualizarMeuPerfil({
       nome: 'Nome Novo',
       telefone: null,
     });
 
-    expect(mockFrom).toHaveBeenCalledWith('perfis');
-    expect(mockUpdate).toHaveBeenCalledWith({ nome: 'Nome Novo', telefone: null });
-    expect(mockEq).toHaveBeenCalledWith('id', 'user-1');
+    expect(mockRpc).toHaveBeenCalledWith('atualizar_meu_perfil', {
+      p_nome: 'Nome Novo',
+      p_telefone: null,
+    });
   });
 
-  it('throws when update fails', async () => {
-    mockEq.mockResolvedValueOnce({ error: new Error('falha de update') });
+  it('throws when the RPC fails', async () => {
+    mockRpc.mockResolvedValueOnce({ error: new Error('falha de update') });
 
     await expect(
-      atualizarMeuPerfil('user-1', {
+      atualizarMeuPerfil({
         nome: 'Nome Novo',
         telefone: '(11) 98888-8888',
       })

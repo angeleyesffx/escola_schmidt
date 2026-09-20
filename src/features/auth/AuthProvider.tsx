@@ -4,6 +4,7 @@ import * as Linking from 'expo-linking';
 import { AppState, Platform, View } from 'react-native';
 
 import { supabase } from '../../lib/supabase';
+import { definirLembrarLogin } from '../../lib/rememberMeStorage';
 
 // Tablet na recepção fica logado o dia inteiro sem ninguém tocar — 30 min
 // parado desloga sozinho, tanto com o app aberto (sem toque na tela) quanto
@@ -26,7 +27,7 @@ type AuthContextValue = {
   meuPapel: Papel | null;
   meuAluno: MeuAluno | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signIn: (email: string, password: string, lembrar?: boolean) => Promise<{ error: string | null }>;
   signUp: (nome: string, email: string, password: string) => Promise<{ error: string | null }>;
   requestPasswordReset: (email: string) => Promise<{ error: string | null }>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ error: string | null }>;
@@ -73,6 +74,23 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  // Recomendação oficial do Supabase para React Native: sem isso, o timer
+  // interno de renovação do access token (setInterval) fica pausado o tempo
+  // todo em segundo plano — igual qualquer timer de JS em RN — e não
+  // necessariamente retoma sozinho ao voltar pro primeiro plano. Resultado
+  // sem essa chamada: o app volta com um token já expirado e a sessão trava
+  // em erro em vez de renovar ou redirecionar pro login.
+  useEffect(() => {
+    const assinatura = AppState.addEventListener('change', (proximoEstado) => {
+      if (proximoEstado === 'active') {
+        supabase.auth.startAutoRefresh();
+      } else {
+        supabase.auth.stopAutoRefresh();
+      }
+    });
+    return () => assinatura.remove();
+  }, []);
+
   // Só pra UI (esconder controles de quem não pode usá-los) — a barreira de
   // verdade continua sendo a RLS, que já bloqueia escrita por papel.
   useEffect(() => {
@@ -80,23 +98,30 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setMeuPapel(null);
       return;
     }
-    let ativo = true;
+    let vigente = true;
     supabase
       .from('perfis')
-      .select('papel')
+      .select('papel, ativo')
       .eq('id', session.user.id)
       .single()
       .then(({ data, error }) => {
-        if (!ativo) return;
+        if (!vigente) return;
         if (error) {
           console.error(error);
           setMeuPapel(null);
           return;
         }
+        // Perfil desativado pelo dono (supabase/migrations/0017): desloga em
+        // vez de deixar entrar com papel válido.
+        if (!data.ativo) {
+          setMeuPapel(null);
+          signOut();
+          return;
+        }
         setMeuPapel(data.papel as Papel);
       });
     return () => {
-      ativo = false;
+      vigente = false;
     };
   }, [session?.user.id]);
 
@@ -127,9 +152,32 @@ export function AuthProvider({ children }: PropsWithChildren) {
     };
   }, [meuPapel, session?.user.id]);
 
-  async function signIn(email: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error?.message ?? null };
+  async function signIn(email: string, password: string, lembrar = true) {
+    // Precisa ser setado antes do signInWithPassword: é a gravação da sessão
+    // que decide, na hora, se vai pro AsyncStorage ou só pra memória.
+    definirLembrarLogin(lembrar);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      return { error: error.message };
+    }
+
+    // Credenciais corretas não bastam: se o dono desativou essa conta
+    // (supabase/migrations/0017), barra aqui em vez de deixar entrar e só
+    // derrubar depois no próximo tick do polling de inatividade.
+    const usuarioId = data?.user?.id;
+    if (usuarioId) {
+      const { data: perfil, error: perfilError } = await supabase
+        .from('perfis')
+        .select('ativo')
+        .eq('id', usuarioId)
+        .single();
+      if (!perfilError && perfil && !perfil.ativo) {
+        await signOut();
+        return { error: 'Sua conta foi desativada. Fale com a administração da escola.' };
+      }
+    }
+
+    return { error: null };
   }
 
   // Mensagem sempre genérica, mesmo em caso de erro: o Supabase já evita
@@ -180,7 +228,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // limpa o storage local), então a sessão não pode ser reaproveitada depois
   // do logout em nenhum dispositivo.
   async function signOut() {
-    await supabase.auth.signOut({ scope: 'global' });
+    try {
+      await supabase.auth.signOut({ scope: 'global' });
+    } catch (error) {
+      // Se a chamada ao servidor falhar de vez (ex.: tablet sem internet no
+      // momento do timeout por inatividade), o Supabase não dispara o evento
+      // SIGNED_OUT e a sessão local nunca é limpa — o usuário ficava preso na
+      // tela atual em vez de voltar pro login. Limpamos localmente aqui como
+      // rede de segurança; o guard em app/(app)/_layout.tsx reage à sessão
+      // virando null e redireciona para /login.
+      console.error(error);
+      setSession(null);
+    }
   }
 
   const ultimaAtividadeRef = useRef(Date.now());
@@ -201,7 +260,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const intervalo = setInterval(() => {
       if (Date.now() - ultimaAtividadeRef.current > TEMPO_INATIVIDADE_MS) {
         signOut();
+        return;
       }
+      // Reaproveita esse polling de 60s pra também pegar uma desativação
+      // (supabase/migrations/0017) feita pelo dono enquanto a sessão já
+      // estava aberta — sem isso, só cairia no próximo login.
+      supabase
+        .from('perfis')
+        .select('ativo')
+        .eq('id', session.user.id)
+        .single()
+        .then(({ data, error }) => {
+          if (!error && data && !data.ativo) {
+            signOut();
+          }
+        });
     }, 60_000);
     return () => clearInterval(intervalo);
   }, [session]);

@@ -9,7 +9,10 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "br.com.schmidtpatinacao.app"
+      "bundleIdentifier": "br.com.schmidtpatinacao.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "br.com.schmidtpatinacao.app",
@@ -45,6 +48,7 @@
       "eas": {
         "projectId": "6ab8f438-d883-4afa-936d-c24671a4eda4"
       }
-    }
+    },
+    "owner": "angeleyesffx"
   }
 }

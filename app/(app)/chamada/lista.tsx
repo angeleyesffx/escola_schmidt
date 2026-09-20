@@ -1,9 +1,9 @@
-import { useCallback, useState } from 'react';
-import { Redirect, useFocusEffect, useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { getAulasRecorrentesHoje, type AulaRecorrente } from '../../../src/features/chamada/api';
+import { getAulasRecorrentesHoje } from '../../../src/features/chamada/api';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
+import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
@@ -19,33 +19,11 @@ function formatModulos(modulos: number[]) {
 export default function ListaChamada() {
   const router = useRouter();
   const { meuPapel } = useAuth();
-  const [aulasHoje, setAulasHoje] = useState<AulaRecorrente[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useFocusEffect(
-    useCallback(() => {
-      let ativo = true;
-      setLoading(true);
-      setError(null);
-
-      getAulasRecorrentesHoje(new Date().getDay())
-        .then((dados) => {
-          if (ativo) setAulasHoje(dados);
-        })
-        .catch((err) => {
-          console.error(err);
-          if (ativo) setError('Erro ao carregar as turmas de hoje. Tente novamente.');
-        })
-        .finally(() => {
-          if (ativo) setLoading(false);
-        });
-
-      return () => {
-        ativo = false;
-      };
-    }, [])
-  );
+  const { data, loading, error } = useAsyncData(() => getAulasRecorrentesHoje(new Date().getDay()), [], {
+    onFocus: true,
+    mensagemErro: 'Erro ao carregar as turmas de hoje. Tente novamente.',
+  });
+  const aulasHoje = data ?? [];
 
   if (meuPapel === 'aluno') {
     return <Redirect href="/" />;
@@ -76,7 +54,7 @@ export default function ListaChamada() {
               Não há turmas agendadas na grade para hoje.
             </Text>
             <TouchableOpacity style={styles.calendarioBotao} onPress={() => router.push('/chamada')}>
-              <Text style={styles.calendarioBotaoTexto}>Ver calendário</Text>
+              <Text style={styles.calendarioBotaoTexto}>Ver agenda</Text>
             </TouchableOpacity>
           </View>
         ) : (

@@ -42,10 +42,11 @@ describe('supabase client', () => {
 
   it('creates the singleton client with mobile auth storage defaults', () => {
     const module = loadSupabaseModule();
+    const { storageComLembrarMe } = require('./rememberMeStorage') as typeof import('./rememberMeStorage');
 
     expect(mockCreateClient).toHaveBeenCalledWith('https://example.supabase.co', 'anon-key', {
       auth: {
-        storage: mockAsyncStorage,
+        storage: storageComLembrarMe,
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
@@ -56,7 +57,7 @@ describe('supabase client', () => {
       key: 'anon-key',
       options: {
         auth: {
-          storage: mockAsyncStorage,
+          storage: storageComLembrarMe,
           autoRefreshToken: true,
           persistSession: true,
           detectSessionInUrl: false,

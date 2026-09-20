@@ -1,10 +1,11 @@
-import { useCallback, useState } from 'react';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { excluirEvento, getEvento, getTiposEvento, type EventoCalendario, type TipoEvento } from '../../../src/features/eventos/api';
+import { excluirEvento, getEvento, getTiposEvento } from '../../../src/features/eventos/api';
 import { formatDataExtenso } from '../../../src/features/chamada/calendar';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
+import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
@@ -15,37 +16,24 @@ export default function DetalheEvento() {
   const { meuPapel } = useAuth();
   const podeEditar = meuPapel === 'dono' || meuPapel === 'professor';
 
-  const [evento, setEvento] = useState<EventoCalendario | null>(null);
-  const [tipo, setTipo] = useState<TipoEvento | null>(null);
-  const [loading, setLoading] = useState(true);
   const [excluindo, setExcluindo] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [erroExcluir, setErroExcluir] = useState<string | null>(null);
 
-  useFocusEffect(
-    useCallback(() => {
-      let ativo = true;
-      setLoading(true);
-      setError(null);
-
-      Promise.all([getEvento(id), getTiposEvento()])
-        .then(([dadosEvento, tipos]) => {
-          if (!ativo) return;
-          setEvento(dadosEvento);
-          setTipo(tipos.find((t) => t.id === dadosEvento.tipo_id) ?? null);
-        })
-        .catch((err) => {
-          console.error(err);
-          if (ativo) setError('Erro ao carregar o evento. Tente novamente.');
-        })
-        .finally(() => {
-          if (ativo) setLoading(false);
-        });
-
-      return () => {
-        ativo = false;
-      };
-    }, [id])
+  const {
+    data,
+    loading,
+    error: erroCarregar,
+  } = useAsyncData(
+    async () => {
+      const [dadosEvento, tipos] = await Promise.all([getEvento(id), getTiposEvento()]);
+      return { evento: dadosEvento, tipo: tipos.find((t) => t.id === dadosEvento.tipo_id) ?? null };
+    },
+    [id],
+    { onFocus: true, mensagemErro: 'Erro ao carregar o evento. Tente novamente.' }
   );
+  const evento = data?.evento ?? null;
+  const tipo = data?.tipo ?? null;
+  const error = erroExcluir ?? erroCarregar;
 
   function confirmarExclusao() {
     Alert.alert('Excluir evento', 'Tem certeza que quer excluir esse evento?', [
@@ -56,13 +44,13 @@ export default function DetalheEvento() {
 
   async function excluir() {
     setExcluindo(true);
-    setError(null);
+    setErroExcluir(null);
     try {
       await excluirEvento(id);
       router.back();
     } catch (err) {
       console.error(err);
-      setError('Erro ao excluir evento. Tente novamente.');
+      setErroExcluir('Erro ao excluir evento. Tente novamente.');
       setExcluindo(false);
     }
   }

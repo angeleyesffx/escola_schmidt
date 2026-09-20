@@ -121,7 +121,23 @@ export async function getOuCriaAula(
     .insert({ aula_recorrente_id: aulaRecorrenteId, data, hora, tipo: 'regular', professor_id: professorId })
     .select('id')
     .single();
-  if (erroInsert) throw erroInsert;
+  if (erroInsert) {
+    // Corrida: outro staff criou a mesma aula entre o select e o insert
+    // acima. O índice único (aula_unica_por_data) já garante que não há
+    // duplicata no banco — só falta reaproveitar a linha que o outro criou
+    // em vez de propagar o erro técnico de volta pra tela.
+    if (erroInsert.code === '23505') {
+      const { data: existenteAposCorrida, error: erroSelectNovamente } = await supabase
+        .from('aulas')
+        .select('id')
+        .eq('aula_recorrente_id', aulaRecorrenteId)
+        .eq('data', data)
+        .single();
+      if (erroSelectNovamente) throw erroSelectNovamente;
+      return existenteAposCorrida.id as string;
+    }
+    throw erroInsert;
+  }
   return criada.id as string;
 }
 
@@ -217,29 +233,44 @@ export async function excluirAulaParticular(id: string) {
   if (error) throw error;
 }
 
+export type TipoRecorrencia = 'unica' | 'diaria' | 'semanal' | 'mensal' | 'anual';
+
 export type DisponibilidadeParticular = {
   id: string;
-  dia_semana: number;
-  hora: string;
+  data_inicio: string;
+  data_fim: string | null;
+  tipo_recorrencia: TipoRecorrencia;
+  horas: string[];
 };
 
 // Horários livres que o próprio professor cadastrou pra dar particular —
-// nunca "qualquer hora vaga", só o que ele abriu de propósito.
+// nunca "qualquer hora vaga", só o que ele abriu de propósito. Cada linha é
+// um padrão de data (dia único, ou recorrência diária/semanal/mensal/anual
+// entre início e fim — supabase/migrations/0019), não mais um dia_semana fixo.
 export async function getDisponibilidadeProfessor(professorId: string) {
   const { data, error } = await supabase
     .from('disponibilidade_particular')
-    .select('id, dia_semana, hora')
+    .select('id, data_inicio, data_fim, tipo_recorrencia, horas')
     .eq('professor_id', professorId)
-    .order('dia_semana')
-    .order('hora');
+    .order('data_inicio');
   if (error) throw error;
   return data as DisponibilidadeParticular[];
 }
 
-export async function criarDisponibilidade(professorId: string, diaSemana: number, hora: string) {
-  const { error } = await supabase
-    .from('disponibilidade_particular')
-    .insert({ professor_id: professorId, dia_semana: diaSemana, hora });
+export async function criarDisponibilidade(
+  professorId: string,
+  dataInicio: string,
+  dataFim: string | null,
+  tipoRecorrencia: TipoRecorrencia,
+  horas: string[]
+) {
+  const { error } = await supabase.from('disponibilidade_particular').insert({
+    professor_id: professorId,
+    data_inicio: dataInicio,
+    data_fim: tipoRecorrencia === 'unica' ? null : dataFim,
+    tipo_recorrencia: tipoRecorrencia,
+    horas,
+  });
   if (error) throw error;
 }
 
@@ -248,38 +279,126 @@ export async function excluirDisponibilidade(id: string) {
   if (error) throw error;
 }
 
-type ProfessorAulaComRecorrente = {
-  aulas_recorrentes: { hora: string; dia_semana: number; ativo: boolean } | null;
+// O cálculo de "qual horário está livre nessa data" (cruzar disponibilidade
+// cadastrada, aula regular da grade e outras particulares já marcadas) agora
+// mora no banco (horarios_livres_particular, 0019) — resolver recorrência
+// diária/semanal/mensal/anual no client duplicaria a mesma lógica ali.
+export async function getHorariosLivresProfessor(professorId: string, dataISO: string) {
+  const { data, error } = await supabase.rpc('horarios_livres_particular', {
+    p_professor_id: professorId,
+    p_data: dataISO,
+  });
+  if (error) throw error;
+  return (data ?? []).map((linha: { hora: string }) => linha.hora as string);
+}
+
+export type ResponsabilidadeProfessor = {
+  id: string;
+  aula_recorrente_id: string;
+  modulo: number;
 };
 
-// Cruza a disponibilidade cadastrada pelo professor com o que já está
-// ocupado naquele dia específico — aula regular da grade (fixa por dia da
-// semana) e outras particulares já marcadas nessa data — e devolve só o que
-// sobra. É isso que limita as horas que aparecem na hora de marcar.
-export async function getHorariosLivresProfessor(professorId: string, dataISO: string) {
-  const diaSemana = diaSemanaPorDataISO(dataISO);
+// Quais (horário da grade, módulo) o professor já reivindicou pra si —
+// alimenta a tela "Meus módulos", onde ele mesmo marca/desmarca em vez de
+// depender do dono pra isso (supabase/migrations/0018).
+export async function getResponsabilidadesProfessor(professorId: string) {
+  const { data, error } = await supabase
+    .from('professores_aula')
+    .select('id, aula_recorrente_id, modulo')
+    .eq('professor_id', professorId);
+  if (error) throw error;
+  return data as ResponsabilidadeProfessor[];
+}
 
-  const [disponibilidade, aulasDoProfessor, particularesDoDia] = await Promise.all([
-    supabase.from('disponibilidade_particular').select('hora').eq('professor_id', professorId).eq('dia_semana', diaSemana),
-    supabase.from('professores_aula').select('aulas_recorrentes(hora, dia_semana, ativo)').eq('professor_id', professorId),
-    supabase.from('aulas').select('hora').eq('professor_id', professorId).eq('tipo', 'particular').eq('data', dataISO),
-  ]);
-  if (disponibilidade.error) throw disponibilidade.error;
-  if (aulasDoProfessor.error) throw aulasDoProfessor.error;
-  if (particularesDoDia.error) throw particularesDoDia.error;
+export async function adicionarResponsabilidade(professorId: string, aulaRecorrenteId: string, modulo: number) {
+  const { data, error } = await supabase
+    .from('professores_aula')
+    .insert({ professor_id: professorId, aula_recorrente_id: aulaRecorrenteId, modulo })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return data.id as string;
+}
 
-  const horasOcupadasRegulares = new Set(
-    ((aulasDoProfessor.data ?? []) as unknown as ProfessorAulaComRecorrente[])
-      .map((linha) => linha.aulas_recorrentes)
-      .filter((ar): ar is NonNullable<typeof ar> => ar !== null && ar.ativo && ar.dia_semana === diaSemana)
-      .map((ar) => ar.hora)
-  );
-  const horasOcupadasParticulares = new Set((particularesDoDia.data ?? []).map((p) => p.hora as string));
+export async function removerResponsabilidade(id: string) {
+  const { error } = await supabase.from('professores_aula').delete().eq('id', id);
+  if (error) throw error;
+}
 
-  return (disponibilidade.data ?? [])
-    .map((d) => d.hora as string)
-    .filter((hora) => !horasOcupadasRegulares.has(hora) && !horasOcupadasParticulares.has(hora))
-    .sort();
+export type AulaTeste = {
+  id: string;
+  aula_recorrente_id: string;
+  data: string;
+  observacoes: string | null;
+  dia_semana: number;
+  hora: string;
+  modulos: number[];
+  alunos: { id: string; nome: string }[];
+};
+
+type AlunoNome = { id: string; nome: string };
+
+type AulaTesteLinha = {
+  id: string;
+  aula_recorrente_id: string;
+  data: string;
+  observacoes: string | null;
+  aulas_recorrentes: { dia_semana: number; hora: string; modulos: number[] } | null;
+  aulas_teste_alunos: { alunos: AlunoNome | null }[];
+};
+
+// Aula teste não mora em `aulas` (que trava 1 aluno por particular) — é um
+// agendamento à parte que sempre aponta pra um horário já existente da grade
+// e pode juntar vários alunos na mesma data (supabase/migrations/0018).
+export async function getAulasTestePorPeriodo(inicioISO: string, fimISO: string) {
+  const { data, error } = await supabase
+    .from('aulas_teste')
+    .select(
+      'id, aula_recorrente_id, data, observacoes, aulas_recorrentes(dia_semana, hora, modulos), aulas_teste_alunos(alunos(id, nome))'
+    )
+    .gte('data', inicioISO)
+    .lte('data', fimISO)
+    .order('data');
+  if (error) throw error;
+
+  return ((data ?? []) as unknown as AulaTesteLinha[]).map((linha) => ({
+    id: linha.id,
+    aula_recorrente_id: linha.aula_recorrente_id,
+    data: linha.data,
+    observacoes: linha.observacoes,
+    dia_semana: linha.aulas_recorrentes?.dia_semana ?? 0,
+    hora: linha.aulas_recorrentes?.hora ?? '',
+    modulos: linha.aulas_recorrentes?.modulos ?? [],
+    alunos: (linha.aulas_teste_alunos ?? [])
+      .map((a) => a.alunos)
+      .filter((a): a is AlunoNome => a !== null),
+  })) as AulaTeste[];
+}
+
+export async function criarAulaTeste(
+  aulaRecorrenteId: string,
+  data: string,
+  alunoIds: string[],
+  observacoes: string | null
+) {
+  const { data: criada, error } = await supabase
+    .from('aulas_teste')
+    .insert({ aula_recorrente_id: aulaRecorrenteId, data, observacoes })
+    .select('id')
+    .single();
+  if (error) throw error;
+
+  const { error: erroAlunos } = await supabase
+    .from('aulas_teste_alunos')
+    .insert(alunoIds.map((alunoId) => ({ aula_teste_id: criada.id, aluno_id: alunoId })));
+  if (erroAlunos) throw erroAlunos;
+
+  return criada.id as string;
+}
+
+export async function excluirAulaTeste(id: string) {
+  const { error } = await supabase.from('aulas_teste').delete().eq('id', id);
+  if (error) throw error;
 }
 
 export type StatusPedido = 'pendente' | 'aprovado';

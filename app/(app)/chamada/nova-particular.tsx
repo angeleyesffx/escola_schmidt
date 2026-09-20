@@ -12,27 +12,17 @@ import {
   View,
 } from 'react-native';
 
-import { getAlunos, type Aluno } from '../../../src/features/alunos/api';
-import {
-  criarAulaParticular,
-  getHorariosLivresProfessor,
-  getProfessores,
-  type ProfessorAula,
-} from '../../../src/features/chamada/api';
+import { getAlunos } from '../../../src/features/alunos/api';
+import { criarAulaParticular, getHorariosLivresProfessor, getProfessores } from '../../../src/features/chamada/api';
 import { formatDataISO } from '../../../src/features/chamada/calendar';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
+import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { DateRangePicker } from '../../../src/components/DateRangePicker';
 import { Footer } from '../../../src/components/Footer';
+import { Chip } from '../../../src/components/Chip';
+import { Dropdown } from '../../../src/components/Dropdown';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
-
-function normalizar(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .trim();
-}
 
 function formatBR(dataISO: string): string {
   return dataISO.split('-').reverse().join('/');
@@ -46,10 +36,7 @@ export default function NovaAulaParticular() {
   const router = useRouter();
   const { meuPapel, session } = useAuth();
 
-  const [alunos, setAlunos] = useState<Aluno[]>([]);
-  const [buscaAluno, setBuscaAluno] = useState('');
   const [alunoId, setAlunoId] = useState<string | null>(null);
-  const [professores, setProfessores] = useState<ProfessorAula[]>([]);
   const [professorId, setProfessorId] = useState<string | null>(null);
   const [dataISO, setDataISO] = useState(formatDataISO(new Date()));
   const [dataAberta, setDataAberta] = useState(false);
@@ -57,36 +44,35 @@ export default function NovaAulaParticular() {
   const [carregandoHorarios, setCarregandoHorarios] = useState(false);
   const [horaAula, setHoraAula] = useState('');
   const [observacoes, setObservacoes] = useState('');
-  const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [erroSalvar, setErroSalvar] = useState<string | null>(null);
 
+  const {
+    data: dadosIniciais,
+    loading,
+    error: erroCarregar,
+  } = useAsyncData(
+    async () => {
+      const [dadosAlunos, dadosProfessores] = await Promise.all([getAlunos(), getProfessores()]);
+      return { alunos: dadosAlunos.filter((a) => a.ativo), professores: dadosProfessores };
+    },
+    [],
+    { mensagemErro: 'Erro ao carregar alunos e professores. Tente novamente.' }
+  );
+  const alunos = dadosIniciais?.alunos ?? [];
+  const professores = dadosIniciais?.professores ?? [];
+  const error = erroSalvar ?? erroCarregar;
+
+  // A equipe só enxerga o próprio perfil na lista de professores (a não ser
+  // que seja dono) — se veio 1 só, já pré-seleciona.
   useEffect(() => {
-    let ativo = true;
-    Promise.all([getAlunos(), getProfessores()])
-      .then(([dadosAlunos, dadosProfessores]) => {
-        if (!ativo) return;
-        setAlunos(dadosAlunos.filter((a) => a.ativo));
-        setProfessores(dadosProfessores);
-        // A equipe só enxerga o próprio perfil na lista de professores (a
-        // não ser que seja dono) — se veio 1 só, já pré-seleciona.
-        if (dadosProfessores.length === 1) {
-          setProfessorId(dadosProfessores[0].id);
-        } else if (session?.user.id && dadosProfessores.some((p) => p.id === session.user.id)) {
-          setProfessorId(session.user.id);
-        }
-      })
-      .catch((err) => {
-        console.error(err);
-        setError('Erro ao carregar alunos e professores. Tente novamente.');
-      })
-      .finally(() => {
-        if (ativo) setLoading(false);
-      });
-    return () => {
-      ativo = false;
-    };
-  }, [session?.user.id]);
+    if (!dadosIniciais) return;
+    if (dadosIniciais.professores.length === 1) {
+      setProfessorId(dadosIniciais.professores[0].id);
+    } else if (session?.user.id && dadosIniciais.professores.some((p) => p.id === session.user.id)) {
+      setProfessorId(session.user.id);
+    }
+  }, [dadosIniciais, session?.user.id]);
 
   // Só mostra (e só deixa escolher) horas que o professor abriu pra
   // particular e que ainda estão livres nessa data específica — sem
@@ -106,7 +92,7 @@ export default function NovaAulaParticular() {
       })
       .catch((err) => {
         console.error(err);
-        if (ativo) setError('Erro ao carregar horários livres do professor. Tente novamente.');
+        if (ativo) setErroSalvar('Erro ao carregar horários livres do professor. Tente novamente.');
       })
       .finally(() => {
         if (ativo) setCarregandoHorarios(false);
@@ -116,22 +102,22 @@ export default function NovaAulaParticular() {
     };
   }, [professorId, dataISO]);
 
-  const alunosFiltrados = alunos.filter((a) => !buscaAluno.trim() || normalizar(a.nome).includes(normalizar(buscaAluno)));
-  const alunoSelecionado = alunos.find((a) => a.id === alunoId) ?? null;
+  const opcoesAlunos = alunos.map((a) => ({ value: a.id, label: a.nome, sublabel: `Módulo ${a.modulo}` }));
+  const opcoesProfessores = professores.map((p) => ({ value: p.id, label: p.nome }));
 
   async function salvar() {
-    setError(null);
+    setErroSalvar(null);
 
     if (!alunoId) {
-      setError('Escolha o aluno.');
+      setErroSalvar('Escolha o aluno.');
       return;
     }
     if (!professorId) {
-      setError('Escolha o professor.');
+      setErroSalvar('Escolha o professor.');
       return;
     }
     if (!horaAula) {
-      setError('Escolha um horário livre do professor.');
+      setErroSalvar('Escolha um horário livre do professor.');
       return;
     }
 
@@ -143,7 +129,7 @@ export default function NovaAulaParticular() {
       console.error(err);
       const jaExiste =
         typeof err === 'object' && err !== null && 'code' in err && (err as { code?: string }).code === '23505';
-      setError(
+      setErroSalvar(
         jaExiste
           ? 'Esse professor já tem uma aula particular marcada nesse mesmo horário.'
           : 'Erro ao agendar aula particular. Tente novamente.'
@@ -174,63 +160,25 @@ export default function NovaAulaParticular() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <Text style={[type.label, styles.rotulo]}>Aluno</Text>
-          {alunoSelecionado ? (
-            <View style={styles.alunoEscolhidoRow}>
-              <View style={styles.alunoEscolhidoCard}>
-                <Text style={type.subtitle}>{alunoSelecionado.nome}</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.trocarBotao}
-                onPress={() => {
-                  setAlunoId(null);
-                  setBuscaAluno('');
-                }}
-              >
-                <Text style={styles.trocarBotaoTexto}>Trocar</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <>
-              <TextInput
-                style={styles.input}
-                value={buscaAluno}
-                onChangeText={setBuscaAluno}
-                placeholder="Buscar por nome"
-                autoCorrect={false}
-              />
-              <View style={styles.listaAlunos}>
-                {alunosFiltrados.length === 0 ? (
-                  <Text style={[type.body, styles.subtitle, styles.vazio]}>Nenhum aluno encontrado.</Text>
-                ) : (
-                  alunosFiltrados.slice(0, 20).map((a) => (
-                    <TouchableOpacity key={a.id} style={styles.alunoCard} onPress={() => setAlunoId(a.id)}>
-                      <Text style={type.body}>{a.nome}</Text>
-                      <Text style={[type.caption, styles.subtitle]}>Módulo {a.modulo}</Text>
-                    </TouchableOpacity>
-                  ))
-                )}
-              </View>
-            </>
-          )}
+          <Dropdown
+            testID="nova-particular-dropdown-aluno"
+            placeholder="Selecione o aluno"
+            searchable
+            options={opcoesAlunos}
+            value={alunoId}
+            onChange={setAlunoId}
+            vazio="Nenhum aluno encontrado."
+          />
 
           <Text style={[type.label, styles.rotulo]}>Professor</Text>
-          {professores.length <= 1 ? (
-            <View style={styles.alunoEscolhidoCard}>
-              <Text style={type.subtitle}>{professores[0]?.nome ?? 'Nenhum professor disponível'}</Text>
-            </View>
-          ) : (
-            <View style={styles.chips}>
-              {professores.map((p) => (
-                <TouchableOpacity
-                  key={p.id}
-                  style={[styles.chip, professorId === p.id && styles.chipAtivo]}
-                  onPress={() => setProfessorId(p.id)}
-                >
-                  <Text style={[styles.chipTexto, professorId === p.id && styles.chipTextoAtivo]}>{p.nome}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
+          <Dropdown
+            testID="nova-particular-dropdown-professor"
+            placeholder="Selecione o professor"
+            options={opcoesProfessores}
+            value={professorId}
+            onChange={setProfessorId}
+            vazio="Nenhum professor disponível."
+          />
 
           <Text style={[type.label, styles.rotulo]}>Data</Text>
           <TouchableOpacity style={styles.input} onPress={() => setDataAberta((atual) => !atual)}>
@@ -265,13 +213,7 @@ export default function NovaAulaParticular() {
           ) : (
             <View style={styles.chips}>
               {horariosLivres.map((hora) => (
-                <TouchableOpacity
-                  key={hora}
-                  style={[styles.chip, horaAula === hora && styles.chipAtivo]}
-                  onPress={() => setHoraAula(hora)}
-                >
-                  <Text style={[styles.chipTexto, horaAula === hora && styles.chipTextoAtivo]}>{formatHora(hora)}</Text>
-                </TouchableOpacity>
+                <Chip key={hora} label={formatHora(hora)} active={horaAula === hora} onPress={() => setHoraAula(hora)} />
               ))}
             </View>
           )}
@@ -350,73 +292,10 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     marginTop: spacing.xs,
   },
-  listaAlunos: {
-    marginTop: spacing.sm,
-    gap: spacing.sm,
-  },
-  alunoCard: {
-    minHeight: touchTarget,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
-    justifyContent: 'center',
-  },
-  vazio: {
-    marginTop: spacing.xs,
-  },
-  alunoEscolhidoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  alunoEscolhidoCard: {
-    flex: 1,
-    minHeight: touchTarget,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.primarySoft,
-    backgroundColor: colors.surfaceTint,
-    paddingHorizontal: spacing.md,
-    justifyContent: 'center',
-  },
-  trocarBotao: {
-    minHeight: touchTarget,
-    paddingHorizontal: spacing.md,
-    justifyContent: 'center',
-  },
-  trocarBotaoTexto: {
-    color: colors.primary,
-    fontFamily: type.subtitle.fontFamily,
-    fontSize: type.subtitle.fontSize,
-  },
   chips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
-  },
-  chip: {
-    minHeight: touchTarget,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chipAtivo: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  chipTexto: {
-    fontFamily: type.subtitle.fontFamily,
-    fontSize: type.subtitle.fontSize,
-    color: colors.text,
-  },
-  chipTextoAtivo: {
-    color: colors.onPrimary,
   },
   error: {
     color: colors.danger,

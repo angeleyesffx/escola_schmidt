@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useState } from 'react';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useState } from 'react';
+import { useRouter } from 'expo-router';
 import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { formatDataExtenso, formatDataISO, formatMesAno } from '../../../src/features/chamada/calendar';
-import { getEventosPorPeriodo, getTiposEvento, type EventoCalendario, type TipoEvento } from '../../../src/features/eventos/api';
+import { getEventosPorPeriodo, getTiposEvento } from '../../../src/features/eventos/api';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
+import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
 import { uiAssets } from '../../../src/constants/uiAssets';
@@ -25,53 +26,21 @@ export default function EventosIndex() {
   const podeEditar = meuPapel === 'dono' || meuPapel === 'professor';
 
   const [mesReferencia, setMesReferencia] = useState(() => new Date());
-  const [eventos, setEventos] = useState<EventoCalendario[]>([]);
-  const [tiposEvento, setTiposEvento] = useState<TipoEvento[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const inicioMesISO = formatDataISO(primeiroDiaDoMes(mesReferencia));
   const fimMesISO = formatDataISO(ultimoDiaDoMes(mesReferencia));
 
-  useFocusEffect(
-    useCallback(() => {
-      let ativo = true;
-      getTiposEvento()
-        .then((dados) => {
-          if (ativo) setTiposEvento(dados);
-        })
-        .catch((err) => console.error(err));
-      return () => {
-        ativo = false;
-      };
-    }, [])
-  );
+  const { data: tiposEvento } = useAsyncData(getTiposEvento, [], { onFocus: true });
+  const {
+    data: eventos,
+    loading,
+    error,
+  } = useAsyncData(() => getEventosPorPeriodo(inicioMesISO, fimMesISO), [inicioMesISO, fimMesISO], {
+    onFocus: true,
+    mensagemErro: 'Erro ao carregar eventos. Tente novamente.',
+  });
 
-  useFocusEffect(
-    useCallback(() => {
-      let ativo = true;
-      setLoading(true);
-      setError(null);
-
-      getEventosPorPeriodo(inicioMesISO, fimMesISO)
-        .then((dados) => {
-          if (ativo) setEventos(dados);
-        })
-        .catch((err) => {
-          console.error(err);
-          if (ativo) setError('Erro ao carregar eventos. Tente novamente.');
-        })
-        .finally(() => {
-          if (ativo) setLoading(false);
-        });
-
-      return () => {
-        ativo = false;
-      };
-    }, [inicioMesISO, fimMesISO])
-  );
-
-  const corPorTipo = new Map(tiposEvento.map((t) => [t.id, t.cor]));
+  const corPorTipo = new Map((tiposEvento ?? []).map((t) => [t.id, t.cor]));
 
   function navegarMes(direcao: -1 | 1) {
     setMesReferencia((atual) => new Date(atual.getFullYear(), atual.getMonth() + direcao, 1));
@@ -116,7 +85,7 @@ export default function EventosIndex() {
         </TouchableOpacity>
       </View>
 
-      {tiposEvento.length > 0 ? (
+      {tiposEvento && tiposEvento.length > 0 ? (
         <View style={styles.legendaEventos}>
           {tiposEvento.map((tipoEvento) => (
             <View key={tipoEvento.id} style={styles.legendaEventoItem}>

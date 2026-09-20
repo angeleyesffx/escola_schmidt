@@ -31,6 +31,7 @@ export default function Login() {
   const tamanhoLogo = modoCompacto ? 136 : 200;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [lembrar, setLembrar] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [resetSubmitting, setResetSubmitting] = useState(false);
@@ -42,7 +43,7 @@ export default function Login() {
     setError(null);
     setResetMessage(null);
     setSubmitting(true);
-    const { error: signInError } = await signIn(email.trim(), password);
+    const { error: signInError } = await signIn(email.trim(), password, lembrar);
     setSubmitting(false);
     if (signInError) {
       setError('Email ou senha incorretos.');
@@ -101,6 +102,17 @@ export default function Login() {
             value={password}
             onChangeText={setPassword}
           />
+
+          <TouchableOpacity
+            testID="login-checkbox-lembrar"
+            style={styles.lembrarLinha}
+            onPress={() => setLembrar((atual) => !atual)}
+          >
+            <View style={[styles.checkbox, lembrar && styles.checkboxMarcado]}>
+              {lembrar ? <Text style={styles.checkboxMarca}>✓</Text> : null}
+            </View>
+            <Text style={[type.body, styles.lembrarTexto]}>Lembrar de mim</Text>
+          </TouchableOpacity>
 
           {error ? (
             <Text testID="login-mensagem-erro" style={styles.error}>
@@ -190,6 +202,33 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     fontFamily: type.body.fontFamily,
     fontSize: type.body.fontSize,
+    color: colors.text,
+  },
+  lembrarLinha: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: touchTarget,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxMarcado: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  checkboxMarca: {
+    color: colors.onPrimary,
+    fontSize: 14,
+  },
+  lembrarTexto: {
     color: colors.text,
   },
   button: {

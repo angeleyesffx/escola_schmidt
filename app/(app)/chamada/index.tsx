@@ -1,15 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useEffect, useState } from 'react';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useState } from 'react';
+import { useRouter } from 'expo-router';
 import { ActivityIndicator, Alert, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import {
   excluirAulaParticular,
+  excluirAulaTeste,
   getAulasParticularesPorPeriodo,
   getAulasRecorrentesPorData,
+  getAulasTestePorPeriodo,
   getGradeSemanal,
   type AulaParticular,
-  type AulaRecorrente,
+  type AulaTeste,
 } from '../../../src/features/chamada/api';
 import {
   addDias,
@@ -21,8 +23,9 @@ import {
   getGradeMes,
   paraDataSemHorario,
 } from '../../../src/features/chamada/calendar';
-import { getEventosPorPeriodo, getTiposEvento, type EventoCalendario, type TipoEvento } from '../../../src/features/eventos/api';
+import { getEventosPorPeriodo, getTiposEvento } from '../../../src/features/eventos/api';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
+import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
@@ -46,16 +49,9 @@ export default function ChamadaIndex() {
   const podeEditar = meuPapel === 'dono' || meuPapel === 'professor';
   const [modo, setModo] = useState<ModoCalendario>('semana');
   const [dataSelecionada, setDataSelecionada] = useState(paraDataSemHorario(new Date()));
-  const [aulas, setAulas] = useState<AulaRecorrente[]>([]);
-  const [gradeSemanal, setGradeSemanal] = useState<AulaRecorrente[]>([]);
-  const [eventos, setEventos] = useState<EventoCalendario[]>([]);
-  const [tiposEvento, setTiposEvento] = useState<TipoEvento[]>([]);
-  const [particulares, setParticulares] = useState<AulaParticular[]>([]);
   const [pickerAberto, setPickerAberto] = useState(false);
   const [pickerData, setPickerData] = useState(dataSelecionada);
   const [filtroEventosDataISO, setFiltroEventosDataISO] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const dataISO = formatDataISO(dataSelecionada);
   const diasSemana = getDiasDaSemana(dataSelecionada);
@@ -70,64 +66,42 @@ export default function ChamadaIndex() {
 
   // Grade fixa é pequena e quase nunca muda — busca uma vez só, não a cada
   // troca de dia/semana/mês, pra pintar horário/módulo direto no calendário.
-  useEffect(() => {
-    let ativo = true;
-    getGradeSemanal()
-      .then((dados) => {
-        if (ativo) setGradeSemanal(dados);
-      })
-      .catch((err) => console.error(err));
-    return () => {
-      ativo = false;
-    };
-  }, []);
+  const { data: dadosGradeSemanal } = useAsyncData(getGradeSemanal, []);
+  const gradeSemanal = dadosGradeSemanal ?? [];
 
-  const aulasPorDiaSemana = new Map<number, AulaRecorrente[]>();
+  const aulasPorDiaSemana = new Map<number, typeof gradeSemanal>();
   for (const aula of gradeSemanal) {
     const lista = aulasPorDiaSemana.get(aula.dia_semana) ?? [];
     lista.push(aula);
     aulasPorDiaSemana.set(aula.dia_semana, lista);
   }
 
-  useEffect(() => {
-    let ativo = true;
-    getTiposEvento()
-      .then((dados) => {
-        if (ativo) setTiposEvento(dados);
-      })
-      .catch((err) => console.error(err));
-    return () => {
-      ativo = false;
-    };
-  }, []);
+  const { data: dadosTiposEvento } = useAsyncData(getTiposEvento, []);
+  const tiposEvento = dadosTiposEvento ?? [];
 
-  useEffect(() => {
-    let ativo = true;
-    getEventosPorPeriodo(inicioVisivel, fimVisivel)
-      .then((dados) => {
-        if (ativo) setEventos(dados);
-      })
-      .catch((err) => console.error(err));
-    return () => {
-      ativo = false;
-    };
-  }, [inicioVisivel, fimVisivel]);
-
-  // useFocusEffect (não useEffect) pra já mostrar uma particular recém
-  // agendada quando volta da tela de agendamento.
-  useFocusEffect(
-    useCallback(() => {
-      let ativo = true;
-      getAulasParticularesPorPeriodo(inicioVisivel, fimVisivel)
-        .then((dados) => {
-          if (ativo) setParticulares(dados);
-        })
-        .catch((err) => console.error(err));
-      return () => {
-        ativo = false;
-      };
-    }, [inicioVisivel, fimVisivel])
+  const { data: dadosEventos } = useAsyncData(
+    () => getEventosPorPeriodo(inicioVisivel, fimVisivel),
+    [inicioVisivel, fimVisivel]
   );
+  const eventos = dadosEventos ?? [];
+
+  // onFocus (não mount simples) pra já mostrar uma particular recém agendada
+  // quando volta da tela de agendamento.
+  const { data: dadosParticulares, setData: setParticulares } = useAsyncData(
+    () => getAulasParticularesPorPeriodo(inicioVisivel, fimVisivel),
+    [inicioVisivel, fimVisivel],
+    { onFocus: true }
+  );
+  const particulares = dadosParticulares ?? [];
+
+  // Mesmo padrão de particulares: onFocus pra refletir uma teste recém
+  // agendada ao voltar da tela de agendamento.
+  const { data: dadosAulasTeste, setData: setAulasTeste } = useAsyncData(
+    () => getAulasTestePorPeriodo(inicioVisivel, fimVisivel),
+    [inicioVisivel, fimVisivel],
+    { onFocus: true }
+  );
+  const aulasTeste = dadosAulasTeste ?? [];
 
   const corPorTipo = new Map(tiposEvento.map((t) => [t.id, t.cor]));
 
@@ -139,8 +113,13 @@ export default function ChamadaIndex() {
     return particulares.filter((p) => p.data === iso);
   }
 
+  function testesNoDia(iso: string) {
+    return aulasTeste.filter((t) => t.data === iso);
+  }
+
   const eventosFiltrados = filtroEventosDataISO ? eventosNoDia(filtroEventosDataISO) : eventos;
   const particularesFiltradas = filtroEventosDataISO ? particularesNoDia(filtroEventosDataISO) : particulares;
+  const testesFiltrados = filtroEventosDataISO ? testesNoDia(filtroEventosDataISO) : aulasTeste;
 
   function confirmarExclusaoParticular(aula: AulaParticular) {
     Alert.alert(
@@ -153,7 +132,7 @@ export default function ChamadaIndex() {
           style: 'destructive',
           onPress: () => {
             excluirAulaParticular(aula.id)
-              .then(() => setParticulares((atual) => atual.filter((p) => p.id !== aula.id)))
+              .then(() => setParticulares((atual) => (atual ?? []).filter((p) => p.id !== aula.id)))
               .catch((err) => console.error(err));
           },
         },
@@ -161,29 +140,35 @@ export default function ChamadaIndex() {
     );
   }
 
-  useFocusEffect(
-    useCallback(() => {
-      let ativo = true;
-      setLoading(true);
-      setError(null);
+  function confirmarExclusaoTeste(aula: AulaTeste) {
+    const nomes = aula.alunos.map((a) => a.nome).join(', ') || 'sem alunos';
+    Alert.alert(
+      'Cancelar aula teste',
+      `Cancelar a aula teste de ${nomes} em ${aula.data.split('-').reverse().join('/')} às ${formatHora(aula.hora)}?`,
+      [
+        { text: 'Voltar', style: 'cancel' },
+        {
+          text: 'Cancelar aula',
+          style: 'destructive',
+          onPress: () => {
+            excluirAulaTeste(aula.id)
+              .then(() => setAulasTeste((atual) => (atual ?? []).filter((t) => t.id !== aula.id)))
+              .catch((err) => console.error(err));
+          },
+        },
+      ]
+    );
+  }
 
-      getAulasRecorrentesPorData(dataISO)
-        .then((dados) => {
-          if (ativo) setAulas(dados);
-        })
-        .catch((err) => {
-          console.error(err);
-          if (ativo) setError('Erro ao carregar a grade. Tente novamente.');
-        })
-        .finally(() => {
-          if (ativo) setLoading(false);
-        });
-
-      return () => {
-        ativo = false;
-      };
-    }, [dataISO])
-  );
+  const {
+    data: dadosAulas,
+    loading,
+    error,
+  } = useAsyncData(() => getAulasRecorrentesPorData(dataISO), [dataISO], {
+    onFocus: true,
+    mensagemErro: 'Erro ao carregar a grade. Tente novamente.',
+  });
+  const aulas = dadosAulas ?? [];
 
   function navegarPeriodo(direcao: -1 | 1) {
     if (modo === 'semana') {
@@ -216,7 +201,7 @@ export default function ChamadaIndex() {
   if (loading) {
     return (
       <>
-        <PageHeader titulo="Calendário" />
+        <PageHeader titulo="Agenda" />
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
         </View>
@@ -228,7 +213,7 @@ export default function ChamadaIndex() {
     <View>
       <View style={styles.bannerTopo}>
         <View style={styles.bannerTopoTexto}>
-          <Text style={[type.label, styles.bannerTopoTag]}>Calendário</Text>
+          <Text style={[type.label, styles.bannerTopoTag]}>Agenda</Text>
           <Text style={type.subtitle}>Planejamento da semana</Text>
           <Text style={[type.caption, styles.subtitle]}>Acompanhe aulas, particulares e eventos do período.</Text>
         </View>
@@ -240,9 +225,9 @@ export default function ChamadaIndex() {
           <TouchableOpacity
             testID="chamada-index-particular-novo"
             style={styles.particularBotao}
-            onPress={() => router.push('/chamada/nova-particular')}
+            onPress={() => router.push('/chamada/agendar')}
           >
-            <Text style={styles.particularBotaoTexto}>+ Particular</Text>
+            <Text style={styles.particularBotaoTexto}>Agendar aula</Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -373,6 +358,7 @@ export default function ChamadaIndex() {
               const aulasDoDia = aulasPorDiaSemana.get(dia.diaSemana) ?? [];
               const eventosDoDia = eventosNoDia(dia.iso);
               const particularesDoDia = particularesNoDia(dia.iso);
+              const testesDoDia = testesNoDia(dia.iso);
               return (
                 <TouchableOpacity
                   key={dia.iso}
@@ -391,12 +377,13 @@ export default function ChamadaIndex() {
                   ) : (
                     <Text style={[type.caption, styles.diaSemAula]}>—</Text>
                   )}
-                  {eventosDoDia.length > 0 || particularesDoDia.length > 0 ? (
+                  {eventosDoDia.length > 0 || particularesDoDia.length > 0 || testesDoDia.length > 0 ? (
                     <View style={styles.diaEventosRow}>
                       {eventosDoDia.slice(0, 3).map((e) => (
                         <View key={e.id} style={[styles.diaEventoDot, { backgroundColor: corPorTipo.get(e.tipo_id) }]} />
                       ))}
                       {particularesDoDia.length > 0 ? <View style={[styles.diaEventoDot, styles.diaParticularDot]} /> : null}
+                      {testesDoDia.length > 0 ? <View style={[styles.diaEventoDot, styles.diaTesteDot]} /> : null}
                     </View>
                   ) : null}
                 </TouchableOpacity>
@@ -420,6 +407,7 @@ export default function ChamadaIndex() {
               const temAula = aulasPorDiaSemana.has(dia.diaSemana);
               const eventosDoDia = eventosNoDia(dia.iso);
               const particularesDoDia = particularesNoDia(dia.iso);
+              const testesDoDia = testesNoDia(dia.iso);
               return (
                 <TouchableOpacity
                   key={dia.iso}
@@ -434,7 +422,7 @@ export default function ChamadaIndex() {
                     {dia.diaMes}
                   </Text>
                   {temAula ? <View style={styles.mesDiaPonto} /> : null}
-                  {eventosDoDia.length > 0 || particularesDoDia.length > 0 ? (
+                  {eventosDoDia.length > 0 || particularesDoDia.length > 0 || testesDoDia.length > 0 ? (
                     <View style={styles.mesDiaEventosRow}>
                       {eventosDoDia.slice(0, 2).map((e) => (
                         <View
@@ -445,6 +433,7 @@ export default function ChamadaIndex() {
                       {particularesDoDia.length > 0 ? (
                         <View style={[styles.mesDiaEventoDot, styles.diaParticularDot]} />
                       ) : null}
+                      {testesDoDia.length > 0 ? <View style={[styles.mesDiaEventoDot, styles.diaTesteDot]} /> : null}
                     </View>
                   ) : null}
                 </TouchableOpacity>
@@ -462,6 +451,10 @@ export default function ChamadaIndex() {
         <View style={styles.legendaEventoItem}>
           <View style={[styles.legendaEventoDot, styles.diaParticularDot]} />
           <Text style={[type.caption, styles.legendaPontoTexto]}>Aula particular agendada</Text>
+        </View>
+        <View style={styles.legendaEventoItem}>
+          <View style={[styles.legendaEventoDot, styles.diaTesteDot]} />
+          <Text style={[type.caption, styles.legendaPontoTexto]}>Aula teste agendada</Text>
         </View>
         {tiposEvento.map((tipoEvento) => (
           <View key={tipoEvento.id} style={styles.legendaEventoItem}>
@@ -493,6 +486,33 @@ export default function ChamadaIndex() {
                 </Text>
                 <Text style={[type.caption, styles.subtitle]}>
                   {p.data.split('-').reverse().join('/')} às {formatHora(p.hora)}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
+
+      {testesFiltrados.length > 0 ? (
+        <View style={styles.eventosLista}>
+          <View style={styles.eventosSecaoTopo}>
+            <Text style={[type.label, styles.secao]}>
+              {filtroEventosDataISO ? 'Testes da data selecionada' : 'Aulas teste deste período'}
+            </Text>
+          </View>
+          {testesFiltrados.map((t) => (
+            <TouchableOpacity
+              key={t.id}
+              testID={`chamada-index-teste-item-${t.id}`}
+              style={styles.eventoItem}
+              disabled={!podeEditar}
+              onLongPress={() => podeEditar && confirmarExclusaoTeste(t)}
+            >
+              <View style={[styles.eventoItemCor, styles.diaTesteDot]} />
+              <View style={styles.eventoItemTexto}>
+                <Text style={type.body}>{t.alunos.map((a) => a.nome).join(', ') || 'Sem alunos'}</Text>
+                <Text style={[type.caption, styles.subtitle]}>
+                  {t.data.split('-').reverse().join('/')} às {formatHora(t.hora)} · {formatModulos(t.modulos)}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -543,7 +563,7 @@ export default function ChamadaIndex() {
 
   return (
     <>
-      <PageHeader titulo="Calendário" />
+      <PageHeader titulo="Agenda" />
       <FlatList
         style={styles.container}
         data={aulas}
@@ -787,6 +807,9 @@ const styles = StyleSheet.create({
   },
   diaParticularDot: {
     backgroundColor: colors.primary,
+  },
+  diaTesteDot: {
+    backgroundColor: colors.present,
   },
   mesCabecalho: {
     flexDirection: 'row',

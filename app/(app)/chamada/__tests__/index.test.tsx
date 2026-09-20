@@ -3,8 +3,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 import ChamadaIndex from '../index';
 import {
   excluirAulaParticular,
+  excluirAulaTeste,
   getAulasParticularesPorPeriodo,
   getAulasRecorrentesPorData,
+  getAulasTestePorPeriodo,
   getGradeSemanal,
 } from '../../../../src/features/chamada/api';
 import { getEventosPorPeriodo, getTiposEvento } from '../../../../src/features/eventos/api';
@@ -31,6 +33,8 @@ jest.mock('../../../../src/features/chamada/api', () => ({
   getGradeSemanal: jest.fn(),
   getAulasParticularesPorPeriodo: jest.fn(),
   excluirAulaParticular: jest.fn(),
+  getAulasTestePorPeriodo: jest.fn(),
+  excluirAulaTeste: jest.fn(),
 }));
 
 jest.mock('../../../../src/features/eventos/api', () => ({
@@ -46,6 +50,8 @@ const mockGetAulasParticularesPorPeriodo = getAulasParticularesPorPeriodo as jes
   typeof getAulasParticularesPorPeriodo
 >;
 const mockExcluirAulaParticular = excluirAulaParticular as jest.MockedFunction<typeof excluirAulaParticular>;
+const mockGetAulasTestePorPeriodo = getAulasTestePorPeriodo as jest.MockedFunction<typeof getAulasTestePorPeriodo>;
+const mockExcluirAulaTeste = excluirAulaTeste as jest.MockedFunction<typeof excluirAulaTeste>;
 const mockGetEventosPorPeriodo = getEventosPorPeriodo as jest.MockedFunction<typeof getEventosPorPeriodo>;
 const mockGetTiposEvento = getTiposEvento as jest.MockedFunction<typeof getTiposEvento>;
 
@@ -62,6 +68,10 @@ describe('ChamadaIndex', () => {
     mockGetAulasParticularesPorPeriodo.mockResolvedValue([]);
     mockExcluirAulaParticular.mockReset();
     mockExcluirAulaParticular.mockResolvedValue(undefined);
+    mockGetAulasTestePorPeriodo.mockReset();
+    mockGetAulasTestePorPeriodo.mockResolvedValue([]);
+    mockExcluirAulaTeste.mockReset();
+    mockExcluirAulaTeste.mockResolvedValue(undefined);
     mockGetEventosPorPeriodo.mockReset();
     mockGetEventosPorPeriodo.mockResolvedValue([]);
     mockGetTiposEvento.mockReset();

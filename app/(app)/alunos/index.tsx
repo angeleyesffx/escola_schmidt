@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Redirect, useFocusEffect, useRouter } from 'expo-router';
+import { useMemo, useState } from 'react';
+import { Redirect, useRouter } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { getAlunos, type Aluno } from '../../../src/features/alunos/api';
-import { getGradeSemanal, type AulaRecorrente } from '../../../src/features/chamada/api';
+import { getGradeSemanal } from '../../../src/features/chamada/api';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
+import { useAsyncData } from '../../../src/hooks/useAsyncData';
+import { normalizar } from '../../../src/lib/texto';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
@@ -13,62 +15,24 @@ const MODULOS = [1, 2, 3, 4] as const;
 const DIAS_CURTOS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 type FiltroStatus = 'todos' | 'ativos' | 'inativos';
 
-function normalizar(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .trim();
-}
-
 export default function AlunosIndex() {
   const router = useRouter();
   const { meuPapel } = useAuth();
-  const [alunos, setAlunos] = useState<Aluno[]>([]);
-  const [grade, setGrade] = useState<AulaRecorrente[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
   const [moduloFiltro, setModuloFiltro] = useState<number | null>(null);
   const [statusFiltro, setStatusFiltro] = useState<FiltroStatus>('todos');
 
-  useFocusEffect(
-    useCallback(() => {
-      let ativo = true;
-      setLoading(true);
-      setError(null);
-
-      getAlunos()
-        .then((dados) => {
-          if (ativo) setAlunos(dados);
-        })
-        .catch((err) => {
-          console.error(err);
-          if (ativo) setError('Erro ao carregar alunos. Tente novamente.');
-        })
-        .finally(() => {
-          if (ativo) setLoading(false);
-        });
-
-      return () => {
-        ativo = false;
-      };
-    }, [])
-  );
+  const {
+    data,
+    loading,
+    error,
+  } = useAsyncData(getAlunos, [], { onFocus: true, mensagemErro: 'Erro ao carregar alunos. Tente novamente.' });
+  const alunos = data ?? [];
 
   // Horário de cada módulo, pra dar contexto no topo de cada lane — não
   // precisa recarregar toda vez que a tela ganha foco, a grade quase não muda.
-  useEffect(() => {
-    let ativo = true;
-    getGradeSemanal()
-      .then((dados) => {
-        if (ativo) setGrade(dados);
-      })
-      .catch((err) => console.error(err));
-    return () => {
-      ativo = false;
-    };
-  }, []);
+  const { data: dadosGrade } = useAsyncData(getGradeSemanal, []);
+  const grade = dadosGrade ?? [];
 
   const alunosFiltrados = useMemo(() => {
     const termo = normalizar(busca);

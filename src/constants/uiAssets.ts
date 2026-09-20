@@ -1,8 +1,6 @@
 /** Imagens disponíveis no repositório — único ponto de require para evitar paths quebrados. */
 export const uiAssets = {
   icon: {
-    inicio: require('../../assets/icon-inicio.png'),
-    calendario: require('../../assets/icon-calendario.png'),
     notificacoes: require('../../assets/icon-notificacoes.png'),
     mensagens: require('../../assets/icon-mensagens.png'),
   },
@@ -13,6 +11,7 @@ export const uiAssets = {
     rodape: require('../../assets/banner-rodape.png'),
   },
   card: {
+    inicio: require('../../assets/cards/card-inicio.png'),
     calendario: require('../../assets/cards/card-calendario.png'),
     chamada: require('../../assets/cards/card-chamada.png'),
     alunos: require('../../assets/cards/card-alunos.png'),

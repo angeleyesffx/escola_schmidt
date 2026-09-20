@@ -11,6 +11,8 @@ const mockSignUp = jest.fn();
 const mockResetPasswordForEmail = jest.fn();
 const mockUpdateUser = jest.fn();
 const mockSignOut = jest.fn();
+const mockStartAutoRefresh = jest.fn();
+const mockStopAutoRefresh = jest.fn();
 const mockUnsubscribe = jest.fn();
 const mockPapelSingle = jest.fn();
 const mockAlunoMaybeSingle = jest.fn();
@@ -46,6 +48,8 @@ jest.mock('../../lib/supabase', () => ({
       resetPasswordForEmail: (...args: unknown[]) => mockResetPasswordForEmail(...args),
       updateUser: (...args: unknown[]) => mockUpdateUser(...args),
       signOut: (options?: { scope?: string }) => mockSignOut(options),
+      startAutoRefresh: () => mockStartAutoRefresh(),
+      stopAutoRefresh: () => mockStopAutoRefresh(),
     },
     from: () => ({
       select: () => ({
@@ -64,6 +68,7 @@ function Consumer() {
   const [signupResult, setSignupResult] = useState('');
   const [resetResult, setResetResult] = useState('');
   const [passwordResult, setPasswordResult] = useState('');
+  const [signInResult, setSignInResult] = useState('');
 
   return (
     <>
@@ -71,9 +76,15 @@ function Consumer() {
       <Text>{session?.user?.email ?? 'sem-sessao'}</Text>
       <Text>{meuPapel ?? 'sem-papel'}</Text>
       <Text>{meuAluno?.nome ?? 'sem-aluno'}</Text>
-      <Pressable onPress={() => void signIn('professor@escola.com', 'segredo')}>
+      <Pressable
+        onPress={async () => {
+          const result = await signIn('professor@escola.com', 'segredo');
+          setSignInResult(result.error ?? 'login-ok');
+        }}
+      >
         <Text>sign-in</Text>
       </Pressable>
+      <Text>{signInResult}</Text>
       <Pressable onPress={() => void signOut()}>
         <Text>sign-out</Text>
       </Pressable>
@@ -117,6 +128,8 @@ describe('AuthProvider', () => {
     mockResetPasswordForEmail.mockReset();
     mockUpdateUser.mockReset();
     mockSignOut.mockReset();
+    mockStartAutoRefresh.mockReset();
+    mockStopAutoRefresh.mockReset();
     mockUnsubscribe.mockReset();
     mockPapelSingle.mockReset();
     mockAlunoMaybeSingle.mockReset();
@@ -126,12 +139,12 @@ describe('AuthProvider', () => {
     mockOnAuthStateChange.mockReturnValue({
       data: { subscription: { unsubscribe: mockUnsubscribe } },
     });
-    mockSignInWithPassword.mockResolvedValue({ error: null });
+    mockSignInWithPassword.mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null });
     mockSignUp.mockResolvedValue({ error: null });
     mockResetPasswordForEmail.mockResolvedValue({ error: null });
     mockUpdateUser.mockResolvedValue({ error: null });
     mockSignOut.mockResolvedValue(undefined);
-    mockPapelSingle.mockResolvedValue({ data: { papel: 'aluno' }, error: null });
+    mockPapelSingle.mockResolvedValue({ data: { papel: 'aluno', ativo: true }, error: null });
     mockAlunoMaybeSingle.mockResolvedValue({ data: null, error: null });
   });
 
@@ -197,6 +210,104 @@ describe('AuthProvider', () => {
     // scope: 'global' é intencional (comentado no código-fonte): revoga o
     // refresh token no servidor, não só limpa o storage local.
     expect(mockSignOut).toHaveBeenCalledWith({ scope: 'global' });
+  });
+
+  // Sem esse fallback local, uma falha de rede na chamada ao servidor (ex.:
+  // tablet sem internet no exato momento do logout por inatividade) deixava
+  // a sessão presa no contexto — o usuário nunca via o redirect pro login.
+  it('clears the local session even when the server sign-out call fails', async () => {
+    mockGetSession.mockResolvedValueOnce({
+      data: { session: { user: { id: 'user-1', email: 'aluna@escola.com' } } },
+    });
+    mockSignOut.mockRejectedValueOnce(new Error('Network request failed'));
+
+    await render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('aluna@escola.com')).toBeTruthy();
+    });
+
+    await fireEvent.press(screen.getByText('sign-out'));
+
+    await waitFor(() => {
+      expect(screen.getByText('sem-sessao')).toBeTruthy();
+    });
+  });
+
+  // Credenciais corretas não bastam pra entrar (supabase/migrations/0017):
+  // se o dono já desativou essa conta, barra no login em vez de deixar
+  // entrar e só derrubar depois no próximo tick do polling de inatividade.
+  it('blocks sign-in when the account has been deactivated', async () => {
+    mockPapelSingle.mockResolvedValueOnce({ data: { ativo: false }, error: null });
+
+    await render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>
+    );
+
+    await fireEvent.press(screen.getByText('sign-in'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Sua conta foi desativada. Fale com a administração da escola.')).toBeTruthy();
+    });
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  // Reaproveita o polling de 60s da inatividade (AuthProvider.tsx) pra
+  // também pegar uma desativação feita pelo dono enquanto a sessão de um
+  // usuário já estava aberta — sem isso, só cairia no próximo login.
+  it('signs the user out via the 60s polling when deactivated mid-session', async () => {
+    jest.useFakeTimers();
+    mockGetSession.mockResolvedValueOnce({
+      data: { session: { user: { id: 'user-1', email: 'aluna@escola.com' } } },
+    });
+    mockPapelSingle.mockResolvedValueOnce({ data: { papel: 'aluno', ativo: true }, error: null });
+    mockPapelSingle.mockResolvedValueOnce({ data: { ativo: false }, error: null });
+
+    await render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('aluna@escola.com')).toBeTruthy();
+    });
+    expect(mockSignOut).not.toHaveBeenCalled();
+
+    await jest.advanceTimersByTimeAsync(60_000);
+
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+    jest.useRealTimers();
+  });
+
+  it('pauses and resumes Supabase token auto-refresh with app foreground state', async () => {
+    await render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(mockAppStateAddEventListener).toHaveBeenCalled();
+    });
+
+    const listener = mockAppStateAddEventListener.mock.calls[0][1] as (proximoEstado: string) => void;
+
+    await act(async () => {
+      listener('background');
+    });
+    expect(mockStopAutoRefresh).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      listener('active');
+    });
+    expect(mockStartAutoRefresh).toHaveBeenCalledTimes(1);
   });
 
   it('returns success on sign up and sends profile name in metadata', async () => {
@@ -316,7 +427,11 @@ describe('AuthProvider', () => {
       expect(screen.getByText('aluna@escola.com')).toBeTruthy();
     });
 
-    const listener = mockAppStateAddEventListener.mock.calls[0][1] as (proximoEstado: string) => void;
+    // Duas assinaturas de AppState existem agora (startAutoRefresh/stopAutoRefresh
+    // do Supabase, registrada incondicionalmente no mount, e a verificação de
+    // inatividade abaixo, registrada só quando há sessão) — pegamos a última,
+    // que é a de inatividade.
+    const listener = mockAppStateAddEventListener.mock.calls.at(-1)?.[1] as (proximoEstado: string) => void;
 
     jest.setSystemTime(new Date(Date.now() + 20 * 60 * 1000));
 
@@ -344,7 +459,7 @@ describe('AuthProvider', () => {
       expect(screen.getByText('aluna@escola.com')).toBeTruthy();
     });
 
-    const listener = mockAppStateAddEventListener.mock.calls[0][1] as (proximoEstado: string) => void;
+    const listener = mockAppStateAddEventListener.mock.calls.at(-1)?.[1] as (proximoEstado: string) => void;
 
     jest.setSystemTime(new Date(Date.now() + 31 * 60 * 1000));
 
@@ -364,7 +479,7 @@ describe('AuthProvider', () => {
     mockGetSession.mockResolvedValueOnce({
       data: { session: { user: { id: 'user-1', email: 'aluna@escola.com' } } },
     });
-    mockPapelSingle.mockResolvedValueOnce({ data: { papel: 'aluno' }, error: null });
+    mockPapelSingle.mockResolvedValueOnce({ data: { papel: 'aluno', ativo: true }, error: null });
 
     await render(
       <AuthProvider>
@@ -394,7 +509,7 @@ describe('AuthProvider', () => {
     mockGetSession.mockResolvedValueOnce({
       data: { session: { user: { id: 'user-1', email: 'aluna@escola.com' } } },
     });
-    mockPapelSingle.mockResolvedValueOnce({ data: { papel: 'aluno' }, error: null });
+    mockPapelSingle.mockResolvedValueOnce({ data: { papel: 'aluno', ativo: true }, error: null });
     mockAlunoMaybeSingle.mockResolvedValueOnce({
       data: {
         id: 'aluno-1',
@@ -420,7 +535,7 @@ describe('AuthProvider', () => {
     mockGetSession.mockResolvedValueOnce({
       data: { session: { user: { id: 'user-1', email: 'prof@escola.com' } } },
     });
-    mockPapelSingle.mockResolvedValueOnce({ data: { papel: 'professor' }, error: null });
+    mockPapelSingle.mockResolvedValueOnce({ data: { papel: 'professor', ativo: true }, error: null });
 
     await render(
       <AuthProvider>

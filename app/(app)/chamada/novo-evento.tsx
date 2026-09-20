@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -36,7 +36,7 @@ export default function NovoEvento() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const editando = Boolean(id);
-  const { session } = useAuth();
+  const { session, meuPapel } = useAuth();
 
   const [tipos, setTipos] = useState<TipoEvento[]>([]);
   const [tipoId, setTipoId] = useState<string | null>(null);
@@ -134,6 +134,10 @@ export default function NovoEvento() {
   }
 
   const tituloPagina = editando ? 'Editar evento' : 'Novo evento';
+
+  if (meuPapel === 'aluno') {
+    return <Redirect href="/" />;
+  }
 
   if (loading) {
     return (

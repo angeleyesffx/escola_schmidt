@@ -15,6 +15,8 @@ import {
 import { useAuth } from '../../src/features/auth/AuthProvider';
 import { atualizarMeuPerfil, getMeuPerfil } from '../../src/features/perfil/api';
 import { atualizarDadosAluno } from '../../src/features/alunos/api';
+import { useAsyncData } from '../../src/hooks/useAsyncData';
+import { paraBR, paraISO } from '../../src/lib/dataBR';
 import { PageHeader } from '../../src/components/PageHeader';
 import { PersonIcon } from '../../src/components/PersonIcon';
 import { PasswordInput } from '../../src/components/PasswordInput';
@@ -26,20 +28,6 @@ const ROTULO_PAPEL: Record<string, string> = {
   professor: 'Professor(a)',
   aluno: 'Aluno',
 };
-
-// Igual ao formulário de "novo aluno": entrada sempre em DD/MM/AAAA, convertida
-// pra AAAA-MM-DD só na hora de gravar.
-function paraISO(dataBR: string): string | null {
-  const m = dataBR.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!m) return null;
-  const [, dia, mes, ano] = m;
-  return `${ano}-${mes}-${dia}`;
-}
-
-function paraBR(dataISO: string): string {
-  const [ano, mes, dia] = dataISO.split('-');
-  return `${dia}/${mes}/${ano}`;
-}
 
 const REGRAS_SENHA: { chave: string; label: string; cumprida: (senha: string) => boolean }[] = [
   { chave: 'tamanho', label: 'Mínimo 8 caracteres', cumprida: (s) => s.length >= 8 },
@@ -54,7 +42,6 @@ export default function Perfil() {
   const souAluno = meuPapel === 'aluno';
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
-  const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
@@ -75,34 +62,21 @@ export default function Perfil() {
 
   const senhaOk = REGRAS_SENHA.every((regra) => regra.cumprida(novaSenha));
 
+  const {
+    data: meuPerfil,
+    loading: carregando,
+    error: erroCarregar,
+  } = useAsyncData(() => getMeuPerfil(session!.user.id), [session?.user.id], {
+    enabled: Boolean(session?.user.id),
+    mensagemErro: 'Erro ao carregar seu perfil. Tente novamente.',
+  });
+  const erroExibido = erro ?? erroCarregar;
+
   useEffect(() => {
-    if (!session?.user.id) {
-      setCarregando(false);
-      return;
-    }
-
-    let ativo = true;
-    setCarregando(true);
-    setErro(null);
-
-    getMeuPerfil(session.user.id)
-      .then((perfil) => {
-        if (!ativo) return;
-        setNome(perfil.nome);
-        setTelefone(perfil.telefone ?? '');
-      })
-      .catch((err) => {
-        console.error(err);
-        if (ativo) setErro('Erro ao carregar seu perfil. Tente novamente.');
-      })
-      .finally(() => {
-        if (ativo) setCarregando(false);
-      });
-
-    return () => {
-      ativo = false;
-    };
-  }, [session?.user.id]);
+    if (!meuPerfil) return;
+    setNome(meuPerfil.nome);
+    setTelefone(meuPerfil.telefone ?? '');
+  }, [meuPerfil]);
 
   useEffect(() => {
     if (!meuAluno) return;
@@ -154,7 +128,7 @@ export default function Perfil() {
     setSucesso(null);
     setSalvando(true);
     try {
-      await atualizarMeuPerfil(session.user.id, {
+      await atualizarMeuPerfil({
         nome: nome.trim(),
         telefone: telefone.trim() || null,
       });
@@ -256,7 +230,7 @@ export default function Perfil() {
               keyboardType="phone-pad"
             />
 
-            {erro ? <Text style={[type.body, styles.error]}>{erro}</Text> : null}
+            {erroExibido ? <Text style={[type.body, styles.error]}>{erroExibido}</Text> : null}
             {sucesso ? <Text style={[type.body, styles.sucesso]}>{sucesso}</Text> : null}
 
             <TouchableOpacity

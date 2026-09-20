@@ -1,9 +1,10 @@
-import { useCallback, useState } from 'react';
-import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { getAluno, getFrequenciaAluno, type Aluno, type RegistroFrequencia } from '../../../../src/features/alunos/api';
+import { getAluno, getFrequenciaAluno, type RegistroFrequencia } from '../../../../src/features/alunos/api';
 import { useAuth } from '../../../../src/features/auth/AuthProvider';
+import { useAsyncData } from '../../../../src/hooks/useAsyncData';
+import { paraBR } from '../../../../src/lib/dataBR';
 import { PageHeader } from '../../../../src/components/PageHeader';
 import { Footer } from '../../../../src/components/Footer';
 import { colors, radius, spacing, touchTarget, type } from '../../../../src/constants/theme';
@@ -20,46 +21,21 @@ const COR_STATUS: Record<RegistroFrequencia['status'], 'present' | 'justified' |
   falta: 'absent',
 };
 
-function formatData(dataISO: string) {
-  const [ano, mes, dia] = dataISO.split('-');
-  return `${dia}/${mes}/${ano}`;
-}
-
 export default function FrequenciaAluno() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { meuPapel, meuAluno } = useAuth();
 
-  const [aluno, setAluno] = useState<Aluno | null>(null);
-  const [registros, setRegistros] = useState<RegistroFrequencia[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useFocusEffect(
-    useCallback(() => {
-      let ativo = true;
-      setLoading(true);
-      setError(null);
-
-      Promise.all([getAluno(id), getFrequenciaAluno(id)])
-        .then(([dadosAluno, dadosFrequencia]) => {
-          if (!ativo) return;
-          setAluno(dadosAluno);
-          setRegistros(dadosFrequencia);
-        })
-        .catch((err) => {
-          console.error(err);
-          if (ativo) setError('Erro ao carregar frequência. Tente novamente.');
-        })
-        .finally(() => {
-          if (ativo) setLoading(false);
-        });
-
-      return () => {
-        ativo = false;
-      };
-    }, [id])
+  const { data, loading, error } = useAsyncData(
+    async () => {
+      const [dadosAluno, dadosFrequencia] = await Promise.all([getAluno(id), getFrequenciaAluno(id)]);
+      return { aluno: dadosAluno, registros: dadosFrequencia };
+    },
+    [id],
+    { onFocus: true, mensagemErro: 'Erro ao carregar frequência. Tente novamente.' }
   );
+  const aluno = data?.aluno ?? null;
+  const registros = data?.registros ?? [];
 
   if (meuPapel === 'aluno') {
     if (!meuAluno) {
@@ -122,7 +98,7 @@ export default function FrequenciaAluno() {
         renderItem={({ item }) => (
           <View style={styles.row}>
             <Text style={type.body}>
-              {formatData(item.data)} · {item.hora}
+              {paraBR(item.data)} · {item.hora}
             </Text>
             <Text style={[type.label, { color: colors[COR_STATUS[item.status]] }]}>
               {ROTULO_STATUS[item.status]}
