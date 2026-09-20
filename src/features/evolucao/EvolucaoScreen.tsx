@@ -12,6 +12,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 
+import { Dropdown } from '../../components/Dropdown';
 import { PageHeader } from '../../components/PageHeader';
 import { Footer } from '../../components/Footer';
 import { colors, radius, spacing, type } from '../../constants/theme';
@@ -19,13 +20,16 @@ import { uiAssets } from '../../constants/uiAssets';
 import { getAluno, getContratoAtual, getFrequenciaAluno, type Aluno } from '../alunos/api';
 import { getGradeSemanal } from '../chamada/api';
 import {
+  atribuirMetodologiaAluno,
   getCriteriosHabilidades,
   getHistoricoNivelAluno,
   getMetodologiaAtualAluno,
+  getMetodologiasAtivas,
   getRequisitosNivel,
   hojeISO,
   registrarAvaliacaoDetalhadaEvolucao,
   registrarAvaliacaoRapidaEvolucao,
+  registrarPromocaoNivel,
   getStatusHabilidadesAluno,
 } from './api';
 import { calcularFrequenciaPorPlano, calcularPercentualCriterios, calcularProgressoNivel } from './selectors';
@@ -33,6 +37,7 @@ import type {
   CriterioHabilidadeEvolucao,
   HistoricoNivelEvolucao,
   MetodologiaAtualAluno,
+  MetodologiaDisponivel,
   ProgressoNivelEvolucao,
   RequisitoNivelEvolucao,
   StatusAtualHabilidade,
@@ -109,6 +114,19 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
   const [habilidadeDetalhadaAberta, setHabilidadeDetalhadaAberta] = useState<string | null>(null);
   const [valoresCriterios, setValoresCriterios] = useState<Record<string, Record<string, string>>>({});
 
+  // Formulário de "atribuir metodologia" — só relevante pra staff quando o
+  // aluno ainda não tem nenhuma (achado 4.2 de evolucao-vs-desempenho.md).
+  const [metodologiasDisponiveis, setMetodologiasDisponiveis] = useState<MetodologiaDisponivel[]>([]);
+  const [metodologiaSelecionada, setMetodologiaSelecionada] = useState<string | null>(null);
+  const [nivelSelecionado, setNivelSelecionado] = useState<string | null>(null);
+  const [atribuindo, setAtribuindo] = useState(false);
+
+  // Formulário de "registrar nível conquistado" — só relevante pra staff
+  // quando o aluno já tem metodologia ativa (evolucao-vs-desempenho.md,
+  // decisão 5: "nível conquistado" vira a fonte da verdade de progressão).
+  const [nivelPromocaoSelecionado, setNivelPromocaoSelecionado] = useState<string | null>(null);
+  const [promovendo, setPromovendo] = useState(false);
+
   const carregar = useCallback(async () => {
     setLoading(true);
     setErro(null);
@@ -141,6 +159,15 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
       setMetodologiaAtual(metodologiaAtual ?? null);
       setNomeMetodologia(metodologiaAtual?.metodologiaNome ?? null);
       setNomeNivel(metodologiaAtual?.nivelAtualNome ?? null);
+
+      // Serve tanto o formulário de "atribuir" (aluno sem metodologia) quanto
+      // o de "promover" (aluno já ativo, escolhendo o próximo nível dentro
+      // da mesma metodologia) — os dois usam a mesma lista.
+      if (podeEditar) {
+        const disponiveis = await getMetodologiasAtivas();
+        setMetodologiasDisponiveis(disponiveis);
+        setMetodologiaSelecionada((atual) => atual ?? metodologiaAtual?.metodologiaId ?? disponiveis[0]?.id ?? null);
+      }
 
       if (!metodologiaAtual?.nivelAtualId) {
         setProgresso(null);
@@ -270,8 +297,57 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
     }
   }
 
+  async function atribuirMetodologia() {
+    if (!metodologiaSelecionada || !nivelSelecionado) {
+      setErro('Escolha a metodologia e o nível antes de atribuir.');
+      return;
+    }
+
+    setAtribuindo(true);
+    setErro(null);
+
+    try {
+      await atribuirMetodologiaAluno(alunoId, metodologiaSelecionada, nivelSelecionado);
+      setNivelSelecionado(null);
+      await carregar();
+    } catch (error) {
+      console.error(error);
+      setErro('Erro ao atribuir metodologia. Tente novamente.');
+    } finally {
+      setAtribuindo(false);
+    }
+  }
+
+  async function registrarPromocao() {
+    if (!nivelPromocaoSelecionado) {
+      setErro('Escolha o nível conquistado antes de confirmar.');
+      return;
+    }
+
+    setPromovendo(true);
+    setErro(null);
+
+    try {
+      await registrarPromocaoNivel(alunoId, nivelPromocaoSelecionado);
+      setNivelPromocaoSelecionado(null);
+      await carregar();
+    } catch (error) {
+      console.error(error);
+      setErro('Erro ao registrar nível conquistado. Tente novamente.');
+    } finally {
+      setPromovendo(false);
+    }
+  }
+
   const nomeExibicaoAluno = aluno?.nome ?? nomeFallback;
   const statusPorHabilidade = new Map(statusHabilidades.map((item) => [item.habilidadeId, item]));
+  const metodologiaEscolhida = metodologiasDisponiveis.find((item) => item.id === metodologiaSelecionada) ?? null;
+  const metodologiaDoAlunoAtiva = metodologiasDisponiveis.find(
+    (item) => item.id === metodologiaAtual?.metodologiaId
+  );
+  const niveisParaPromocao = (metodologiaDoAlunoAtiva?.niveis ?? []).filter(
+    (nivel) => nivel.id !== metodologiaAtual?.nivelAtualId
+  );
 
   return (
     <>
@@ -313,6 +389,71 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
 
         {!loading && !erro ? (
           <>
+            {podeEditar && !metodologiaAtual ? (
+              <View style={styles.cardBase}>
+                <Text style={styles.cardTag}>Atribuir metodologia</Text>
+                <Text style={styles.cardTexto}>
+                  Este aluno ainda não tem metodologia e nível configurados — escolha abaixo para começar a
+                  acompanhar a evolução dele.
+                </Text>
+
+                {metodologiasDisponiveis.length === 0 ? (
+                  <Text style={styles.cardTexto}>
+                    Nenhuma metodologia ativa cadastrada. Configure uma metodologia no banco antes de atribuir.
+                  </Text>
+                ) : null}
+
+                {metodologiasDisponiveis.length > 1 ? (
+                  <Dropdown
+                    testID="evolucao-select-metodologia"
+                    placeholder="Metodologia"
+                    options={metodologiasDisponiveis.map((item) => ({ value: item.id, label: item.nome }))}
+                    value={metodologiaSelecionada}
+                    onChange={(valor) => {
+                      setMetodologiaSelecionada(valor);
+                      setNivelSelecionado(null);
+                    }}
+                  />
+                ) : null}
+
+                {metodologiaEscolhida ? (
+                  <View style={styles.statusGrid}>
+                    {metodologiaEscolhida.niveis.map((nivel) => {
+                      const ativo = nivelSelecionado === nivel.id;
+                      return (
+                        <TouchableOpacity
+                          key={nivel.id}
+                          testID={`evolucao-nivel-${nivel.id}`}
+                          style={[styles.statusChip, ativo && styles.statusChipAtivo]}
+                          onPress={() => setNivelSelecionado(nivel.id)}
+                        >
+                          <Text style={[styles.statusChipTexto, ativo && styles.statusChipTextoAtivo]}>
+                            {nivel.nome}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ) : null}
+
+                <TouchableOpacity
+                  testID="evolucao-botao-atribuir-metodologia"
+                  style={[
+                    styles.botaoSalvarDetalhado,
+                    (!nivelSelecionado || atribuindo) && styles.botaoSecundarioDesabilitado,
+                  ]}
+                  onPress={atribuirMetodologia}
+                  disabled={!nivelSelecionado || atribuindo}
+                >
+                  {atribuindo ? (
+                    <ActivityIndicator color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.botaoSalvarDetalhadoTexto}>Atribuir metodologia e nível</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
             <View style={styles.cardBase}>
               <Text style={styles.cardTag}>Progresso para o próximo nível</Text>
               <Text style={styles.cardTitulo}>
@@ -330,6 +471,50 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
                     : 'Assim que seu professor organizar as habilidades desse nível, seu progresso vai aparecer bem aqui.'}
               </Text>
             </View>
+
+            {podeEditar && metodologiaAtual && niveisParaPromocao.length > 0 ? (
+              <View style={styles.cardBase}>
+                <Text style={styles.cardTag}>Registrar nível conquistado</Text>
+                <Text style={styles.cardTexto}>
+                  O sistema indica prontidão, mas não promove sozinho — confirme abaixo quando o aluno conquistar o
+                  próximo nível.
+                </Text>
+
+                <View style={styles.statusGrid}>
+                  {niveisParaPromocao.map((nivel) => {
+                    const ativo = nivelPromocaoSelecionado === nivel.id;
+                    return (
+                      <TouchableOpacity
+                        key={nivel.id}
+                        testID={`evolucao-promocao-nivel-${nivel.id}`}
+                        style={[styles.statusChip, ativo && styles.statusChipAtivo]}
+                        onPress={() => setNivelPromocaoSelecionado(nivel.id)}
+                      >
+                        <Text style={[styles.statusChipTexto, ativo && styles.statusChipTextoAtivo]}>
+                          {nivel.nome}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <TouchableOpacity
+                  testID="evolucao-botao-registrar-promocao"
+                  style={[
+                    styles.botaoSalvarDetalhado,
+                    (!nivelPromocaoSelecionado || promovendo) && styles.botaoSecundarioDesabilitado,
+                  ]}
+                  onPress={registrarPromocao}
+                  disabled={!nivelPromocaoSelecionado || promovendo}
+                >
+                  {promovendo ? (
+                    <ActivityIndicator color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.botaoSalvarDetalhadoTexto}>Confirmar nível conquistado</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ) : null}
 
             {progresso?.focoAtual ? (
               <View style={styles.cardBase}>

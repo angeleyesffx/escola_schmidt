@@ -6,6 +6,7 @@ import type {
   CriterioHabilidadeEvolucao,
   HistoricoNivelEvolucao,
   MetodologiaAtualAluno,
+  MetodologiaDisponivel,
   RequisitoNivelEvolucao,
   StatusAtualHabilidade,
 } from './types';
@@ -59,6 +60,50 @@ export async function getMetodologiaAtualAluno(alunoId: string, dataReferencia =
     dataInicio: atual.data_inicio,
     dataFim: atual.data_fim,
   } as MetodologiaAtualAluno;
+}
+
+// Alimenta o formulário de "atribuir metodologia" (EvolucaoScreen, achado
+// 4.2 de evolucao-vs-desempenho.md) — lista as metodologias em vigor com
+// seus níveis já aninhados, pra staff escolher sem uma segunda consulta.
+export async function getMetodologiasAtivas() {
+  const { data, error } = await supabase
+    .from('metodologias_evolucao')
+    .select('id, nome, niveis_evolucao(id, nome, ordem)')
+    .eq('ativa', true)
+    .order('nome');
+
+  if (error) throw error;
+
+  return (data ?? []).map((item: any) => ({
+    id: item.id,
+    nome: item.nome,
+    niveis: ((item.niveis_evolucao ?? []) as { id: string; nome: string; ordem: number }[])
+      .slice()
+      .sort((a, b) => a.ordem - b.ordem),
+  })) as MetodologiaDisponivel[];
+}
+
+export async function atribuirMetodologiaAluno(alunoId: string, metodologiaId: string, nivelId: string) {
+  const { data, error } = await supabase.rpc('atribuir_metodologia_aluno', {
+    p_aluno_id: alunoId,
+    p_metodologia_id: metodologiaId,
+    p_nivel_id: nivelId,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+// Registra "nível conquistado" — o trigger aplica_promocao_nivel_evolucao
+// (0025) reage a esse insert e avança aluno_metodologias.nivel_atual_id e
+// alunos.modulo sozinho; esta função só chama a RPC de validação.
+export async function registrarPromocaoNivel(alunoId: string, nivelId: string, observacoes?: string | null) {
+  const { data, error } = await supabase.rpc('registrar_promocao_nivel', {
+    p_aluno_id: alunoId,
+    p_nivel_id: nivelId,
+    p_observacoes: observacoes ?? null,
+  });
+  if (error) throw error;
+  return data as string;
 }
 
 export async function getStatusHabilidadesAluno(alunoId: string) {

@@ -86,6 +86,12 @@ export type MetodologiaAtualAluno = {
   dataFim: string | null;
 };
 
+export type MetodologiaDisponivel = {
+  id: string;
+  nome: string;
+  niveis: { id: string; nome: string; ordem: number }[];
+};
+
 export type AvaliacaoRapidaEvolucaoInput = {
   alunoId: string;
   habilidadeId: string;
