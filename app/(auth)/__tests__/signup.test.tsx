@@ -91,12 +91,30 @@ describe('Signup', () => {
     await fireEvent.press(screen.getByTestId('signup-button-criar-conta'));
 
     await waitFor(() => {
-      expect(mockSignUp).toHaveBeenCalledWith('Ana Silva', 'ana@escola.com', SENHA_FORTE);
+      expect(mockSignUp).toHaveBeenCalledWith('Ana Silva', 'ana@escola.com', SENHA_FORTE, 'proprio', '2026-09-20');
     });
     expect(await screen.findByText('Cadastro enviado')).toBeTruthy();
 
     await fireEvent.press(screen.getByTestId('signup-sucesso-voltar-login'));
     expect(mockReplace).toHaveBeenCalledWith('/login');
+  });
+
+  it('passes titular "responsavel" to signUp when that option is chosen', async () => {
+    await render(<Signup />);
+
+    await preencherFormularioValido();
+    await fireEvent.press(screen.getByTestId('signup-titular-responsavel'));
+    await fireEvent.press(screen.getByTestId('signup-button-criar-conta'));
+
+    await waitFor(() => {
+      expect(mockSignUp).toHaveBeenCalledWith(
+        'Ana Silva',
+        'ana@escola.com',
+        SENHA_FORTE,
+        'responsavel',
+        '2026-09-20'
+      );
+    });
   });
 
   it('shows the returned error and stays on the form when sign up fails', async () => {

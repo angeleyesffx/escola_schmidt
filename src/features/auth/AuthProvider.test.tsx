@@ -90,7 +90,7 @@ function Consumer() {
       </Pressable>
       <Pressable
         onPress={async () => {
-          const result = await signUp('Prof Ana', 'prof@escola.com', 'Senha@123');
+          const result = await signUp('Prof Ana', 'prof@escola.com', 'Senha@123', 'proprio', '2026-09-20');
           setSignupResult(result.error ?? 'ok');
         }}
       >
@@ -323,7 +323,7 @@ describe('AuthProvider', () => {
     expect(mockSignUp).toHaveBeenCalledWith({
       email: 'prof@escola.com',
       password: 'Senha@123',
-      options: { data: { nome: 'Prof Ana' } },
+      options: { data: { nome: 'Prof Ana', titular: 'proprio', consentimento_versao: '2026-09-20' } },
     });
   });
 

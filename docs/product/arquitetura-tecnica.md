@@ -51,7 +51,7 @@ Migration `0022_presenca_respeita_meus_modulos.sql`: `aula_escrita` (para `tipo 
 
 ### 2.6 Item 6 — Papel `responsavel` + signup unificado + consentimento persistido
 
-**Parcialmente superado por `0020`, com desenho diferente do decidido.** Ver secao 3 — decisao arquitetural que precisa ser re-tomada antes de qualquer implementacao aqui, porque o codigo ja andou num caminho que os documentos anteriores nao prev(iam.
+**Escopo reduzido fechado em 2026-09-20 (Fase 3, migration `0023`).** Ver secao 3 para a decisao de nao seguir com o papel `responsavel` completo — `0020` (vinculo automatico por e-mail) ja resolve o achado 4.1, e a parte de consentimento (achado 4.2) foi implementada isoladamente, sem enum novo. Residual, deliberadamente fora de escopo: multiplos filhos por conta (achado 4.3) e o enum `responsavel` em si — so entram se surgir necessidade real de permissao diferenciada.
 
 ### 2.7 Item 7 — Concluir importacao automatica de feriados
 
@@ -113,9 +113,12 @@ Sem mudanca de escopo, so renumeracao de migration:
 
 ### Fase 3 — Consentimento formal no signup (escopo reduzido, ver secao 3)
 
-1. Migration `0024_consentimento_signup.sql`: colunas `titular`, `consentimento_versao`, `consentimento_aceito_em` em `perfis`.
-2. `AuthProvider.signUp()` (`src/features/auth/AuthProvider.tsx:186`) passa a receber `titular` e a versao do texto de consentimento (constante `CONSENTIMENTO` ja existe em `signup.tsx`) e grava-los logo apos o `insert` de `perfis` (mesma transacao logica do trigger `cria_perfil_novo_usuario`, ou update imediato depois).
-3. **Sem** mudanca de enum, RLS adicional, ou remocao do fluxo de candidatos nao vinculados — esses continuam existindo para o caso residual de conta autocadastrada sem `responsavel_email` preenchido em nenhum aluno (0020 so cobre o caso com e-mail casando).
+**Status: fechada em 2026-09-20**, exatamente no escopo reduzido da secao 3 — sem mudanca de enum, RLS adicional, ou remocao do fluxo de candidatos nao vinculados (esses continuam existindo para o caso residual de `titular === 'proprio'`, coberto so parcialmente por `0020`).
+
+1. Migration `0023_consentimento_signup.sql`: colunas `titular`, `consentimento_versao`, `consentimento_aceito_em` em `perfis` (nulas — convite via `convidar-usuario`/`convidar-aluno` nao passa pela tela de consentimento, so autocadastro publico preenche). `cria_perfil_novo_usuario()` (`0001`, ja reescrita em `0017`/`0020`) atualizada mais uma vez pra ler `titular`/`consentimento_versao` de `raw_user_meta_data` e gravar `consentimento_aceito_em = now()` na mesma insercao — sem passo separado de "salvar depois".
+2. `AuthProvider.signUp()` ganhou dois parametros novos (`titular: Titular`, `consentimentoVersao: string`) — tipo `Titular` agora exportado de `AuthProvider.tsx` (mesmo padrao de `Papel`), `signup.tsx` importa em vez de declarar localmente. `supabase.auth.signUp` passa `titular`/`consentimento_versao` em `options.data`.
+3. `signup.tsx`: nova constante `CONSENTIMENTO_VERSAO = '2026-09-20'` (versao do texto `CONSENTIMENTO`, ja existente) passada pro `signUp()`.
+4. Testes atualizados/novos: `AuthProvider.test.tsx` (metadata inclui `titular`/`consentimento_versao`), `signup.test.tsx` (novo caso cobrindo `titular === 'responsavel'`).
 
 ### Fase 4 — Migracao Minha Evolucao <- Desempenho (sem mudanca de escopo, detalhamento tecnico abaixo)
 
@@ -142,6 +145,6 @@ Dados legados (`avaliacoes_desempenho`, `testes_nivel`) nao sao apagados — vir
 
 ## 6. Proximo passo
 
-**Status em 2026-09-20:** Fase 0, Fase 1 e Fase 2 fechadas — schema aplicado em producao (`0001`-`0022`), bootstrap do `dono` feito, Edge Functions deployadas, `.env` conferido, RLS de "Meus modulos" em vigor, tudo commitado em `4b73760` (Fase 2 ainda pendente de commit, codigo/migration prontos e aplicados). Unico residual e o item de manutencao de documentacao da Fase 0 (nao bloqueia nada tecnico). Ordem recomendada daqui pra frente: commit da Fase 2 -> Fase 3 (escopo reduzido, so consentimento) -> Fase 4 (migracao Evolucao <- Desempenho), com o item aditivo de feriados podendo entrar em paralelo a qualquer momento.
+**Status em 2026-09-20:** Fase 0, Fase 1, Fase 2 e Fase 3 fechadas — schema aplicado em producao (`0001`-`0023`), bootstrap do `dono` feito, Edge Functions deployadas, `.env` conferido, RLS de "Meus modulos" em vigor, consentimento persistido no signup. Unico residual sem bloqueio tecnico e o item de manutencao de documentacao da Fase 0. Ordem recomendada daqui pra frente: commit da Fase 3 -> Fase 4 (migracao Evolucao <- Desempenho, o maior item restante) -> item aditivo de feriados (pode entrar em paralelo a qualquer momento).
 
 A decisao da secao 3 (nao expandir para papel `responsavel` completo) e a unica divergencia deste documento em relacao a uma decisao ja registrada anteriormente — se voce quiser manter o desenho original de `alunos-e-responsaveis.md` mesmo com `0020` ja resolvendo o sintoma principal, essa parte do plano muda; o resto (Fases 0, 1, 2, 4 e o item de feriados) nao depende dessa escolha.

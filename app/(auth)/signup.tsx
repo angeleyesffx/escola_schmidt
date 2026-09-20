@@ -12,12 +12,15 @@ import {
   View,
 } from 'react-native';
 
-import { useAuth } from '../../src/features/auth/AuthProvider';
+import { useAuth, type Titular } from '../../src/features/auth/AuthProvider';
 import { PageHeader } from '../../src/components/PageHeader';
 import { PasswordInput } from '../../src/components/PasswordInput';
 import { colors, fonts, radius, spacing, touchTarget, type } from '../../src/constants/theme';
 
-type Titular = 'proprio' | 'responsavel';
+// Versão do texto abaixo — muda só quando o texto muda de verdade, não a
+// cada deploy. Vai pra perfis.consentimento_versao (0023) pra saber depois
+// qual redação exata a pessoa aceitou, se o texto for revisado no futuro.
+const CONSENTIMENTO_VERSAO = '2026-09-20';
 
 const CONSENTIMENTO: Record<Titular, string> = {
   proprio:
@@ -62,7 +65,7 @@ export default function Signup() {
     if (!podeEnviar) return;
 
     setSubmitting(true);
-    const { error: signUpError } = await signUp(nome.trim(), email.trim(), senha);
+    const { error: signUpError } = await signUp(nome.trim(), email.trim(), senha, titular, CONSENTIMENTO_VERSAO);
     setSubmitting(false);
 
     if (signUpError) {

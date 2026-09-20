@@ -13,6 +13,8 @@ const TEMPO_INATIVIDADE_MS = 30 * 60 * 1000;
 
 export type Papel = 'dono' | 'professor' | 'aluno';
 
+export type Titular = 'proprio' | 'responsavel';
+
 export type MeuAluno = {
   id: string;
   nome: string;
@@ -28,7 +30,13 @@ type AuthContextValue = {
   meuAluno: MeuAluno | null;
   loading: boolean;
   signIn: (email: string, password: string, lembrar?: boolean) => Promise<{ error: string | null }>;
-  signUp: (nome: string, email: string, password: string) => Promise<{ error: string | null }>;
+  signUp: (
+    nome: string,
+    email: string,
+    password: string,
+    titular: Titular,
+    consentimentoVersao: string
+  ) => Promise<{ error: string | null }>;
   requestPasswordReset: (email: string) => Promise<{ error: string | null }>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -183,12 +191,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // Mensagem sempre genérica, mesmo em caso de erro: o Supabase já evita
   // confirmar se um email está cadastrado, e não queremos reabrir essa
   // brecha aqui devolvendo o motivo real do erro pra tela.
-  async function signUp(nome: string, email: string, password: string) {
+  async function signUp(
+    nome: string,
+    email: string,
+    password: string,
+    titular: Titular,
+    consentimentoVersao: string
+  ) {
     try {
+      // titular e consentimento_versao viram raw_user_meta_data e são lidos
+      // por cria_perfil_novo_usuario() (0023) na mesma transação que cria a
+      // linha em perfis — não existe um segundo passo de "salvar depois".
       const { error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { nome } },
+        options: { data: { nome, titular, consentimento_versao: consentimentoVersao } },
       });
       if (error) {
         return { error: ERRO_GENERICO_CADASTRO };
