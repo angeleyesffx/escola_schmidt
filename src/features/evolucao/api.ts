@@ -1,15 +1,21 @@
 import { supabase } from '../../lib/supabase';
+import { slugify } from '../../lib/texto';
 
 import type {
   AvaliacaoDetalhadaEvolucaoInput,
   AvaliacaoEvolucaoResumo,
   AvaliacaoRapidaEvolucaoInput,
+  CategoriaCatalogo,
   CriterioHabilidadeEvolucao,
+  HabilidadeCatalogo,
   HistoricoNivelEvolucao,
   MetodologiaAtualAluno,
   MetodologiaDisponivel,
+  ModalidadeEvolucao,
+  RequisitoNivelAdmin,
   RequisitoNivelEvolucao,
   StatusAtualHabilidade,
+  StatusHabilidadeEvolucao,
 } from './types';
 
 export function hojeISO() {
@@ -277,4 +283,176 @@ export async function getAvaliacoesEvolucaoAluno(alunoId: string) {
     percentualGeral: item.percentual_geral,
     observacoes: item.observacoes,
   })) as AvaliacaoEvolucaoResumo[];
+}
+
+// ---------------------------------------------------------------------------
+// Catálogo pedagógico (dono-only) — docs/product/evolucao-vs-desempenho.md §8.
+// RLS já era dono-only desde 0007; isso só existia via SQL direto até agora.
+// ---------------------------------------------------------------------------
+
+export async function getModalidadesEvolucao() {
+  const { data, error } = await supabase
+    .from('modalidades_evolucao')
+    .select('id, nome, slug')
+    .eq('ativo', true)
+    .order('nome');
+  if (error) throw error;
+  return (data ?? []) as ModalidadeEvolucao[];
+}
+
+export async function getCategoriasCatalogo() {
+  const { data, error } = await supabase
+    .from('categorias_habilidade')
+    .select('id, modalidade_id, nome, slug, descricao, ordem, ativo, modalidades_evolucao(nome)')
+    .order('ordem');
+  if (error) throw error;
+
+  return (data ?? []).map((item: any) => ({
+    id: item.id,
+    modalidadeId: item.modalidade_id,
+    modalidadeNome: primeiroItem<{ nome: string }>(item.modalidades_evolucao)?.nome ?? 'Modalidade',
+    nome: item.nome,
+    slug: item.slug,
+    descricao: item.descricao,
+    ordem: item.ordem,
+    ativo: item.ativo,
+  })) as CategoriaCatalogo[];
+}
+
+export async function criarCategoria(modalidadeId: string, nome: string, descricao: string | null, ordem: number) {
+  const { error } = await supabase
+    .from('categorias_habilidade')
+    .insert({ modalidade_id: modalidadeId, nome, slug: slugify(nome), descricao, ordem });
+  if (error) throw error;
+}
+
+export async function atualizarCategoria(
+  id: string,
+  campos: Partial<{ nome: string; descricao: string | null; ordem: number; ativo: boolean }>
+) {
+  const { error } = await supabase.from('categorias_habilidade').update(campos).eq('id', id);
+  if (error) throw error;
+}
+
+export async function getHabilidadesCatalogo() {
+  const { data, error } = await supabase
+    .from('habilidades_catalogo')
+    .select('id, categoria_id, nome, slug, nome_internacional, descricao, ativo, categorias_habilidade(nome)')
+    .order('nome');
+  if (error) throw error;
+
+  return (data ?? []).map((item: any) => ({
+    id: item.id,
+    categoriaId: item.categoria_id,
+    categoriaNome: primeiroItem<{ nome: string }>(item.categorias_habilidade)?.nome ?? 'Categoria',
+    nome: item.nome,
+    slug: item.slug,
+    nomeInternacional: item.nome_internacional,
+    descricao: item.descricao,
+    ativo: item.ativo,
+  })) as HabilidadeCatalogo[];
+}
+
+export async function criarHabilidade(
+  categoriaId: string,
+  nome: string,
+  nomeInternacional: string | null,
+  descricao: string | null
+) {
+  const { error } = await supabase.from('habilidades_catalogo').insert({
+    categoria_id: categoriaId,
+    nome,
+    slug: slugify(nome),
+    nome_internacional: nomeInternacional,
+    descricao,
+  });
+  if (error) throw error;
+}
+
+export async function atualizarHabilidade(
+  id: string,
+  campos: Partial<{ nome: string; nomeInternacional: string | null; descricao: string | null; ativo: boolean }>
+) {
+  const payload: Record<string, unknown> = {};
+  if ('nome' in campos) payload.nome = campos.nome;
+  if ('nomeInternacional' in campos) payload.nome_internacional = campos.nomeInternacional;
+  if ('descricao' in campos) payload.descricao = campos.descricao;
+  if ('ativo' in campos) payload.ativo = campos.ativo;
+
+  const { error } = await supabase.from('habilidades_catalogo').update(payload).eq('id', id);
+  if (error) throw error;
+}
+
+export async function getRequisitosNivelAdmin(nivelId: string) {
+  const { data, error } = await supabase
+    .from('requisitos_nivel_evolucao')
+    .select(
+      `
+        id,
+        nivel_id,
+        habilidade_id,
+        obrigatorio,
+        peso,
+        nota_minima,
+        status_minimo,
+        habilidades_catalogo!inner(nome, categorias_habilidade!inner(nome))
+      `
+    )
+    .eq('nivel_id', nivelId);
+  if (error) throw error;
+
+  return (data ?? []).map((item: any) => ({
+    id: item.id,
+    nivelId: item.nivel_id,
+    habilidadeId: item.habilidade_id,
+    habilidadeNome: item.habilidades_catalogo.nome,
+    categoriaNome: item.habilidades_catalogo.categorias_habilidade.nome,
+    obrigatorio: item.obrigatorio,
+    peso: item.peso,
+    notaMinima: item.nota_minima,
+    statusMinimo: item.status_minimo,
+  })) as RequisitoNivelAdmin[];
+}
+
+export async function adicionarRequisitoNivel(
+  nivelId: string,
+  habilidadeId: string,
+  peso: number,
+  statusMinimo: StatusHabilidadeEvolucao,
+  notaMinima: number | null,
+  obrigatorio: boolean
+) {
+  const { error } = await supabase.from('requisitos_nivel_evolucao').insert({
+    nivel_id: nivelId,
+    habilidade_id: habilidadeId,
+    peso,
+    status_minimo: statusMinimo,
+    nota_minima: notaMinima,
+    obrigatorio,
+  });
+  if (error) throw error;
+}
+
+export async function atualizarRequisitoNivel(
+  id: string,
+  campos: Partial<{
+    peso: number;
+    statusMinimo: StatusHabilidadeEvolucao;
+    notaMinima: number | null;
+    obrigatorio: boolean;
+  }>
+) {
+  const payload: Record<string, unknown> = {};
+  if ('peso' in campos) payload.peso = campos.peso;
+  if ('statusMinimo' in campos) payload.status_minimo = campos.statusMinimo;
+  if ('notaMinima' in campos) payload.nota_minima = campos.notaMinima;
+  if ('obrigatorio' in campos) payload.obrigatorio = campos.obrigatorio;
+
+  const { error } = await supabase.from('requisitos_nivel_evolucao').update(payload).eq('id', id);
+  if (error) throw error;
+}
+
+export async function removerRequisitoNivel(id: string) {
+  const { error } = await supabase.from('requisitos_nivel_evolucao').delete().eq('id', id);
+  if (error) throw error;
 }

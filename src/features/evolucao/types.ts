@@ -116,6 +116,46 @@ export type AvaliacaoRapidaEvolucaoInput = {
   dataAvaliacao?: string;
 };
 
+export type ModalidadeEvolucao = {
+  id: string;
+  nome: string;
+  slug: string;
+};
+
+export type CategoriaCatalogo = {
+  id: string;
+  modalidadeId: string;
+  modalidadeNome: string;
+  nome: string;
+  slug: string;
+  descricao: string | null;
+  ordem: number;
+  ativo: boolean;
+};
+
+export type HabilidadeCatalogo = {
+  id: string;
+  categoriaId: string;
+  categoriaNome: string;
+  nome: string;
+  slug: string;
+  nomeInternacional: string | null;
+  descricao: string | null;
+  ativo: boolean;
+};
+
+export type RequisitoNivelAdmin = {
+  id: string;
+  nivelId: string;
+  habilidadeId: string;
+  habilidadeNome: string;
+  categoriaNome: string;
+  obrigatorio: boolean;
+  peso: number;
+  notaMinima: number | null;
+  statusMinimo: StatusHabilidadeEvolucao;
+};
+
 export type AvaliacaoDetalhadaEvolucaoInput = {
   alunoId: string;
   habilidadeId: string;

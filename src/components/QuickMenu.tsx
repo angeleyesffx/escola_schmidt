@@ -72,6 +72,7 @@ export function QuickMenu({ variante = 'barra' }: Props) {
 
   if (souDono) {
     itens.push({ label: 'Usuários', href: '/usuarios', icon: uiAssets.card.perfil });
+    itens.push({ label: 'Catálogo de Evolução', href: '/catalogo-evolucao', icon: uiAssets.card.desempenho });
   } else if (meuPapel === 'professor') {
     itens.push({ label: 'Convidar usuário', href: '/usuarios/novo', icon: uiAssets.card.perfil });
   }
