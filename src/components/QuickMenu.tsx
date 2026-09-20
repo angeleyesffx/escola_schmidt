@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Animated, Image, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { uiAssets } from '../constants/uiAssets';
@@ -24,6 +24,7 @@ const ROTULO_PAPEL: Record<string, string> = {
   dono: 'Dono',
   professor: 'Professor(a)',
   aluno: 'Aluno',
+  responsavel: 'Responsável',
 };
 
 export function QuickMenu({ variante = 'barra' }: Props) {
@@ -166,7 +167,11 @@ export function QuickMenu({ variante = 'barra' }: Props) {
               </TouchableOpacity>
             ) : null}
 
-            <View style={styles.drawerConteudo}>
+            <ScrollView
+              style={styles.drawerConteudo}
+              contentContainerStyle={styles.drawerConteudoLista}
+              showsVerticalScrollIndicator={false}
+            >
               {itens.map((item) => (
                 <TouchableOpacity key={`${item.href}-${item.label}`} style={styles.item} onPress={() => navegar(item.href)}>
                   <View style={styles.itemCard}>
@@ -179,7 +184,7 @@ export function QuickMenu({ variante = 'barra' }: Props) {
                   <Text style={styles.itemTexto}>{item.label}</Text>
                 </TouchableOpacity>
               ))}
-            </View>
+            </ScrollView>
 
             <View style={styles.drawerRodape}>
               <View style={styles.separador} />
@@ -316,6 +321,8 @@ const styles = StyleSheet.create({
   },
   drawerConteudo: {
     flex: 1,
+  },
+  drawerConteudoLista: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',

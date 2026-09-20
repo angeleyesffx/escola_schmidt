@@ -1,16 +1,21 @@
-import { Image, StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { uiAssets } from '../constants/uiAssets';
+import { colors, spacing, type } from '../constants/theme';
 
 // Barra fixa no rodapé, no mesmo espírito do PageHeader (fixo no topo): fica
-// fora da área rolável, ocupa a largura toda e a imagem é esticada para
-// preencher a faixa de ponta a ponta.
-const ALTURA_RODAPE = 110;
+// fora da área rolável, ocupa a largura toda. A imagem usa "cover" (não
+// "stretch") pra preencher a faixa sem distorcer — a arte é bem mais larga
+// que alta (2170x314), então "stretch" esticava/achatava fora de proporção
+// em qualquer largura de tela que não fosse exatamente essa.
+const ALTURA_BANNER = 110;
+const ANO_ATUAL = new Date().getFullYear();
 
 export function Footer() {
   return (
     <View style={styles.container}>
-      <Image source={uiAssets.banner.rodape} style={styles.imagem} resizeMode="stretch" />
+      <Image source={uiAssets.banner.rodape} style={styles.imagem} resizeMode="cover" />
+      <Text style={styles.copyright}>© {ANO_ATUAL} V&P SOLUTIONS LTDA. Todos os direitos reservados.</Text>
     </View>
   );
 }
@@ -18,10 +23,16 @@ export function Footer() {
 const styles = StyleSheet.create({
   container: {
     width: '100%',
-    height: ALTURA_RODAPE,
+    backgroundColor: colors.background,
   },
   imagem: {
     width: '100%',
-    height: '100%',
+    height: ALTURA_BANNER,
+  },
+  copyright: {
+    ...type.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
+    paddingVertical: spacing.xs,
   },
 });
