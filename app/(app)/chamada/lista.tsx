@@ -1,7 +1,7 @@
 import { Redirect, useRouter } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { getAulasRecorrentesHoje } from '../../../src/features/chamada/api';
+import { getAulasRecorrentesHoje, getResponsabilidadesProfessor } from '../../../src/features/chamada/api';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { PageHeader } from '../../../src/components/PageHeader';
@@ -18,18 +18,29 @@ function formatModulos(modulos: number[]) {
 
 export default function ListaChamada() {
   const router = useRouter();
-  const { meuPapel } = useAuth();
+  const { meuPapel, session } = useAuth();
+  const souProfessor = meuPapel === 'professor';
   const { data, loading, error } = useAsyncData(() => getAulasRecorrentesHoje(new Date().getDay()), [], {
     onFocus: true,
     mensagemErro: 'Erro ao carregar as turmas de hoje. Tente novamente.',
   });
-  const aulasHoje = data ?? [];
+  // Professor só vê, na lista de chamada, as turmas que assumiu em "Meus
+  // módulos" — dono continua vendo a grade inteira. Espelha a RLS de
+  // presenca_escrita (0022/0023): sem vínculo em professores_aula, a
+  // chamada nem abriria de verdade, então nem faz sentido mostrar o atalho.
+  const { data: responsabilidades, loading: loadingResponsabilidades } = useAsyncData(
+    () => getResponsabilidadesProfessor(session!.user.id),
+    [session?.user.id],
+    { onFocus: true, enabled: souProfessor && Boolean(session?.user.id) }
+  );
+  const meusSlots = new Set((responsabilidades ?? []).map((r) => r.aula_recorrente_id));
+  const aulasHoje = (data ?? []).filter((aula) => !souProfessor || meusSlots.has(aula.id));
 
   if (meuPapel === 'aluno') {
     return <Redirect href="/" />;
   }
 
-  if (loading) {
+  if (loading || (souProfessor && loadingResponsabilidades)) {
     return (
       <>
         <PageHeader titulo="Lista de chamada" />

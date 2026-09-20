@@ -35,7 +35,11 @@ Status confirmado lendo o codigo atual, nao o que os documentos registravam.
 
 ### 2.3 Item 3 — RLS: chamada regular respeita "Meus modulos" (exceto dono)
 
-**Parcialmente aberto — metade da base ja existe.** `0018` ja da ao professor autogestao de `professores_aula` (pre-requisito operacional para o backfill funcionar sem o dono precisar atribuir tudo manualmente). Mas a policy de fato bloqueante, `presenca_escrita` (`supabase/migrations/0001_schema.sql:267-268`), continua `using (eh_equipe()) with check (eh_equipe())` — qualquer professor ainda faz chamada de qualquer turma. O desenho de `plano-de-execucao.md` Fase 2 (backfill de `professores_aula` a partir de `aulas_recorrentes.professor_id`, depois trocar a policy para exigir o vinculo) continua valido como esta. Unico ajuste: como `0018` ja deu ao professor o direito de se auto-atribuir, o backfill pode ser complementado por um convite na propria UI ("Meus modulos" ja existe em `chamada/modulos.tsx`) pedindo que cada professor confirme seus modulos **antes** de apertar a RLS — reduz o risco operacional descrito no `plano-de-execucao.md` §2.
+**Resolvido em 2026-09-20, com desenho mais simples do que o planejado.** Ao escrever a migration, descobri que a premissa do `plano-de-execucao.md` §4 (backfill a partir de `aulas_recorrentes.professor_id`) estava desatualizada: essa coluna existia no schema original (`0001`) mas foi **removida** em `0005_pedido_presenca_professor.sql` quando `professores_aula` virou a fonte da verdade — não sobra nenhum dado legado pra migrar. Combinado ao achado da secao 1.1 (banco recem-populado, sem nenhum professor com aula em andamento), a migration de backfill deixou de ser necessaria — essa e a janela mais segura possivel pra essa RLS entrar em vigor, exatamente por nao haver uso real ainda a proteger.
+
+Migration `0022_presenca_respeita_meus_modulos.sql`: `aula_escrita` (para `tipo = 'regular'`) e `presenca_escrita` agora exigem `sou_responsavel_pela_aula(aula_recorrente_id)` (funcao ja existente, criada em `0018` para `aulas_teste`, reaproveitada aqui) — `dono` mantem bypass total (embutido na propria funcao). UI: `chamada/lista.tsx` e os atalhos de `chamada/index.tsx` (Agenda) agora filtram a lista de turmas do dia por `getResponsabilidadesProfessor(professorId)` quando `meuPapel === 'professor'`; `dono` continua vendo a grade inteira. Cobertura de teste nova em `chamada/__tests__/lista.test.tsx` (5 casos: dono ve tudo, professor so ve o que assumiu, lista vazia quando nao assumiu nada, navegacao, guarda de aluno).
+
+**Consequencia operacional:** a partir da aplicacao desta migration, todo professor precisa passar por "Meus modulos" (`chamada/modulos.tsx`) e assumir seus horarios antes de conseguir abrir a primeira chamada — vale avisar a equipe antes de convidar os primeiros professores reais.
 
 ### 2.4 Item 4 — Tratar `23505` em `getOuCriaAula`
 
@@ -86,10 +90,12 @@ Isso substitui os passos 2, 3, 5 e 6 do desenho original de `alunos-e-responsave
 
 Pendente, ainda dentro da Fase 0:
 
-- [ ] Commit das migrations `0017`-`0021` e das telas correspondentes (`chamada/agendar.tsx`, `modulos.tsx`, `nova-teste.tsx`, `usuarios/`, `chamada/novo-evento.tsx`, `src/features/chamada/api.ts`) — nada disso foi commitado ainda, so aplicado/editado localmente.
-- [ ] Deploy das Edge Functions `convidar-usuario` e `convidar-aluno` (`supabase functions deploy`) — SQL Editor nao instala codigo de function, so migration; nao ha confirmacao de que isso ja rodou.
-- [ ] Conferir que `.env` local aponta para o mesmo projeto Supabase que recebeu as migrations (`EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY`).
+- [x] Commit `4b73760` (2026-09-20): migrations `0017`-`0021`, telas correspondentes (`chamada/agendar.tsx`, `modulos.tsx`, `nova-teste.tsx`, `usuarios/`, `chamada/novo-evento.tsx`, `src/features/chamada/api.ts`) e o restante do working tree que dependia delas (`AuthProvider.tsx`, `alunos/api.ts`, `QuickMenu.tsx`, componentes `Chip`/`Dropdown`, hook `useAsyncData`, etc. — tudo validado com `tsc --noEmit` e a suite completa de testes, 15 suites/123 testes, antes do commit). `.expo/` (cache local) adicionado ao `.gitignore` e excluido do commit.
+- [x] Deploy das Edge Functions `convidar-usuario` e `convidar-aluno` — confirmado em 2026-09-20.
+- [x] `.env` local apontando para o mesmo projeto Supabase que recebeu as migrations — confirmado em 2026-09-20.
 - [ ] Atualizar os 6 documentos de produto para nao descrever esses fluxos como "ja existentes" de forma ambigua — sao implementacoes deste ciclo, agora tambem aplicadas, mas ainda sem uso real registrado (banco recem-populado, sem dados).
+
+**Fase 0 fechada** (2026-09-20), com excecao do item de manutencao de documentacao acima, que nao bloqueia nada tecnico. Base de producao esta consistente com o codigo commitado em `4b73760`.
 
 ### Fase 1 — Correcoes pequenas e isoladas (revisao do plano original)
 
@@ -103,10 +109,7 @@ Sem mudanca de escopo, so renumeracao de migration:
 
 ### Fase 2 — Chamada respeita "Meus modulos" (revisao do plano original, ver §2.3)
 
-1. Migration `0022_backfill_professores_aula.sql`: para cada `aulas_recorrentes` ativo com `professor_id` preenchido, inserir em `professores_aula` (professor, slot, cada modulo do array) se ainda nao existir.
-2. Comunicar aos professores para conferirem "Meus modulos" (`chamada/modulos.tsx`, ja existe) antes do corte.
-3. Migration `0023_presenca_respeita_meus_modulos.sql`: trocar `presenca_escrita` para `professor` exigir `exists (select 1 from professores_aula pa where pa.professor_id = auth.uid() and pa.aula_recorrente_id = aulas.aula_recorrente_id)` via join com `aulas`, com `papel_atual() = 'dono'` como bypass total. Mesmo tratamento para a policy de `aula_escrita` do tipo regular.
-4. UI: `chamada/lista.tsx` e os atalhos da Agenda filtram a lista de turmas do dia por `professores_aula` quando `meuPapel === 'professor'`.
+**Status: fechada em 2026-09-20** — migration `0022_presenca_respeita_meus_modulos.sql` aplicada em producao, filtro de UI em `lista.tsx`/`index.tsx` e testes novos implementados, sem a migration de backfill originalmente prevista (ver §2.3 para o motivo). Falta so o commit e avisar a equipe que professores precisam confirmar "Meus modulos" antes de fazer a primeira chamada.
 
 ### Fase 3 — Consentimento formal no signup (escopo reduzido, ver secao 3)
 
@@ -139,6 +142,6 @@ Dados legados (`avaliacoes_desempenho`, `testes_nivel`) nao sao apagados — vir
 
 ## 6. Proximo passo
 
-**Status em 2026-09-20:** Fase 0 (schema aplicado + bootstrap) e Fase 1 (itens 1, 2 e 4) estao com o trabalho tecnico feito, pendente so de commit e dos passos remanescentes da Fase 0 (deploy das Edge Functions, conferencia de `.env`, atualizacao dos 6 documentos de produto). Ordem recomendada daqui pra frente: fechar os pendentes de Fase 0 -> commit -> Fase 2 (RLS de "Meus modulos" em `presencas`, precisa de backfill antes) -> Fase 3 (escopo reduzido) -> Fase 4, com o item aditivo de feriados podendo entrar em paralelo a qualquer momento.
+**Status em 2026-09-20:** Fase 0, Fase 1 e Fase 2 fechadas — schema aplicado em producao (`0001`-`0022`), bootstrap do `dono` feito, Edge Functions deployadas, `.env` conferido, RLS de "Meus modulos" em vigor, tudo commitado em `4b73760` (Fase 2 ainda pendente de commit, codigo/migration prontos e aplicados). Unico residual e o item de manutencao de documentacao da Fase 0 (nao bloqueia nada tecnico). Ordem recomendada daqui pra frente: commit da Fase 2 -> Fase 3 (escopo reduzido, so consentimento) -> Fase 4 (migracao Evolucao <- Desempenho), com o item aditivo de feriados podendo entrar em paralelo a qualquer momento.
 
 A decisao da secao 3 (nao expandir para papel `responsavel` completo) e a unica divergencia deste documento em relacao a uma decisao ja registrada anteriormente — se voce quiser manter o desenho original de `alunos-e-responsaveis.md` mesmo com `0020` ja resolvendo o sintoma principal, essa parte do plano muda; o resto (Fases 0, 1, 2, 4 e o item de feriados) nao depende dessa escolha.

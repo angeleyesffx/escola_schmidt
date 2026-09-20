@@ -10,6 +10,7 @@ import {
   getAulasRecorrentesPorData,
   getAulasTestePorPeriodo,
   getGradeSemanal,
+  getResponsabilidadesProfessor,
   type AulaParticular,
   type AulaTeste,
 } from '../../../src/features/chamada/api';
@@ -45,8 +46,9 @@ function formatModulos(modulos: number[]) {
 
 export default function ChamadaIndex() {
   const router = useRouter();
-  const { meuPapel } = useAuth();
+  const { meuPapel, session } = useAuth();
   const podeEditar = meuPapel === 'dono' || meuPapel === 'professor';
+  const souProfessor = meuPapel === 'professor';
   const [modo, setModo] = useState<ModoCalendario>('semana');
   const [dataSelecionada, setDataSelecionada] = useState(paraDataSemHorario(new Date()));
   const [pickerAberto, setPickerAberto] = useState(false);
@@ -168,7 +170,16 @@ export default function ChamadaIndex() {
     onFocus: true,
     mensagemErro: 'Erro ao carregar a grade. Tente novamente.',
   });
-  const aulas = dadosAulas ?? [];
+  // Mesmo filtro de "Meus módulos" aplicado em chamada/lista.tsx: professor
+  // só vê, como atalho pra abrir chamada, as turmas que assumiu — o calendário
+  // (gradeSemanal, acima) continua mostrando a grade inteira pra contexto.
+  const { data: responsabilidades } = useAsyncData(
+    () => getResponsabilidadesProfessor(session!.user.id),
+    [session?.user.id],
+    { onFocus: true, enabled: souProfessor && Boolean(session?.user.id) }
+  );
+  const meusSlots = new Set((responsabilidades ?? []).map((r) => r.aula_recorrente_id));
+  const aulas = (dadosAulas ?? []).filter((aula) => !souProfessor || meusSlots.has(aula.id));
 
   function navegarPeriodo(direcao: -1 | 1) {
     if (modo === 'semana') {
