@@ -114,7 +114,7 @@ export default function JornadaAluno() {
     }, [carregar])
   );
 
-  if (meuPapel === 'aluno') {
+  if (meuPapel === 'aluno' || meuPapel === 'responsavel') {
     if (!meuAluno) {
       return (
         <View style={styles.center}>

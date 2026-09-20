@@ -164,7 +164,7 @@ export default function DisponibilidadeParticularScreen() {
     }
   }
 
-  if (meuPapel === 'aluno') {
+  if (meuPapel === 'aluno' || meuPapel === 'responsavel') {
     return <Redirect href="/" />;
   }
 

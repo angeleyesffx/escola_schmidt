@@ -7,7 +7,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeaders } from 'npm:@supabase/supabase-js@^2/cors';
 
 const REDIRECT_TO = 'escolaschmidt://reset-password';
-const PAPEIS_VALIDOS = ['dono', 'professor', 'aluno'];
+const PAPEIS_VALIDOS = ['dono', 'professor', 'aluno', 'responsavel'];
 
 export default {
   fetch: async (req: Request) => {

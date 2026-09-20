@@ -12,6 +12,7 @@ import { colors, spacing, type } from '../../../src/constants/theme';
 
 const PAPEIS: { valor: Papel; label: string }[] = [
   { valor: 'aluno', label: 'Aluno' },
+  { valor: 'responsavel', label: 'Responsável' },
   { valor: 'professor', label: 'Professor(a)' },
   { valor: 'dono', label: 'Dono' },
 ];

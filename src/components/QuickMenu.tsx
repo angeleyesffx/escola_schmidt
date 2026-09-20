@@ -45,7 +45,7 @@ export function QuickMenu({ variante = 'barra' }: Props) {
     });
   }, [aberto, montado, translateX]);
 
-  const souAluno = meuPapel === 'aluno';
+  const souAluno = (meuPapel === 'aluno' || meuPapel === 'responsavel');
   const souEquipe = meuPapel === 'dono' || meuPapel === 'professor';
   const souDono = meuPapel === 'dono';
 

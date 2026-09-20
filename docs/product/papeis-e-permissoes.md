@@ -101,3 +101,66 @@ Estes dois itens estao com decisao de produto fechada e sao pequenos e isolados 
 O ponto 1 (melhorar o modelo de "Responsavel") nao tem decisao de solucao ainda — so a decisao de que o estado atual e insuficiente. Vou aprofundar isso em `docs/product/alunos-e-responsaveis.md`, quando chegar a vez desse modulo na ordem combinada, propondo opcoes concretas (papel formal `responsavel` vs. tabela de vinculo N:N aluno-responsavel mantendo o papel `aluno`).
 
 Proximo documento: `docs/product/chamada-agenda-frequencia.md`.
+
+## 6. Retomada (2026-09-20): sistema de configuracao por papel, e responsividade do menu lateral
+
+O usuario pediu pra revisitar "o sistema de configuracao do app em cada papel" — o `dono` deveria ter poder total sobre agenda/calendarios, agendamento de horarios, distribuicao de professores por modulo, eventos e convites; os demais papeis, menos. Pediu tambem um icone novo no menu lateral (`QuickMenu.tsx`) pra essa tela, e que o menu fique rolavel, ja que a lista de itens so cresce.
+
+### 6.1 Achado confirmado: `QuickMenu.tsx` nao tem scroll
+
+`drawerConteudo` (`src/components/QuickMenu.tsx:316-323, 168-181`) e um `View` simples com `flexWrap`, dentro de um `Animated.View` de altura fixa (`top:0, bottom:0`) — **nao ha `ScrollView`**. Hoje o `dono` ja ve 9 itens (Inicio, Agenda, Eventos, Alunos, Chamada, Horarios por professor, Modulos por professor, Usuarios, Meu perfil); qualquer item novo (Catalogo de Evolucao, e a Configuracoes pedida agora) empurra pra 10-11, com risco real de cortar itens em telas menores, ja que nada hoje rola pra compensar.
+
+### 6.2 Achado novo, relevante pro escopo de "poder total sobre agenda/calendarios": faltam 2 telas de administracao que nunca existiram
+
+Procurei se ja existe alguma tela pra editar a grade fixa (`aulas_recorrentes` — dia/hora/modulos de cada horario da semana) ou os tipos de evento (`tipos_evento` — nome/cor usados em `chamada/novo-evento.tsx`). **Nenhuma das duas existe.** `src/features/chamada/api.ts` nunca insere/atualiza `aulas_recorrentes`; `src/features/eventos/api.ts` so tem `getTiposEvento` (leitura). Essas duas tabelas, hoje, so podem ser criadas/editadas rodando SQL direto — nunca tiveram tela, desde o schema original (`0001`). Isso e relevante porque "poder total sobre a agenda/calendarios" citado pelo usuario pode significar so os agendamentos dentro da grade (o que ja existe: disponibilidade, modulos por professor, aula particular/teste), ou pode significar tambem **editar a propria grade** (criar/mudar um horario fixo da semana) e **os tipos de evento** (cores/nomes) — isso muda o tamanho do que precisa ser construido, entao virou pergunta na secao 6.4.
+
+### 6.3 Desenho proposto: tela "Configuracoes" como hub, reorganizando o menu
+
+Em vez de continuar empilhando itens no `QuickMenu` (o que so agrava o achado 6.1), proponho consolidar os itens de **administracao/configuracao** (por oposicao aos de **operacao do dia a dia**) numa tela nova `app/(app)/configuracoes/index.tsx`, com um unico icone no menu lateral substituindo os 3 que hoje sao separados:
+
+**Operacao do dia a dia** (continuam soltos no `QuickMenu`, sem mudanca): Inicio, Agenda, Eventos (visualizacao), Alunos, Chamada, Minha Evolucao/Frequencia (aluno), Meu perfil.
+
+**Configuracoes** (novo hub, 1 icone so no QuickMenu, conteudo interno varia por papel):
+- **Dono** ve tudo: Horarios por professor (`/chamada/disponibilidade`), Modulos por professor (`/chamada/modulos`), Usuarios (`/usuarios`), Catalogo de Evolucao (novo, secao 8 de `evolucao-vs-desempenho.md`) — e, se a resposta da secao 6.4 confirmar, Grade semanal e Tipos de evento (novas).
+- **Professor** ve so o escopo proprio: Meus modulos, Horarios livres, Convidar usuario — os mesmos 3 que ja tem hoje no QuickMenu direto, so que agrupados dentro de Configuracoes em vez de soltos.
+- **Aluno** nao ve o icone de Configuracoes (nada la se aplica).
+
+Isso tambem resolve o achado 6.1 de forma mais direta do que so adicionar scroll: reduz o `QuickMenu` de ~9-11 itens pra ~6-7 pro dono, empurrando o crescimento futuro (mais telas de admin) pra dentro do hub, nao pro menu principal. **Mesmo assim, o `QuickMenu` deveria ganhar `ScrollView`** (achado 6.1 e valido independente da reorganizacao — telas muito pequenas ou fontes grandes por acessibilidade podem cortar itens mesmo com so 6-7 cards).
+
+### 6.4 Decisoes registradas (2026-09-20)
+
+| # | Pergunta | Decisao |
+|---|---|---|
+| 1 | Grade semanal fixa entra em Configuracoes? | **Sim.** Nova tela de CRUD (dia da semana, hora, modulos 1-4, ativo). RLS ja pronta e dono-only (`grade_escrita`, `0001`) |
+| 2 | Excluir vs desativar um horario com historico | **So desativar quando ha historico** (aulas/aulas_teste vinculadas). Exclusao definitiva so liberada quando nao ha nenhum uso registrado — evita o `on delete set null` de `aulas.aula_recorrente_id` (`0001:121`) apagar o vinculo historico de chamadas antigas |
+| 3 | Tipos de evento entram em Configuracoes? | **Sim.** Nova tela de CRUD (nome, cor, ordem, ativo) |
+| 4 | Permissao de tipos_evento (dono+professor ou so dono?) | **Mantem staff (`eh_equipe()`), sem mudanca de RLS** — ver principio geral na secao 6.5 abaixo, que resolve esta e futuras perguntas do mesmo tipo |
+
+### 6.5 Principio geral de permissao (registrado pelo usuario, vale para Configuracoes e alem)
+
+O usuario definiu uma regra que deve orientar toda decisao de permissao daqui pra frente, nao so as de Configuracoes: **"mudancas mais criticas apenas o dono deve fazer, o professor tem poderes limitados mas tem mais poderes que alunos e responsaveis. Alunos e responsaveis so podem cuidar dos proprios agendamentos, pedir a presenca para professores/dono e de suas configuracoes pessoais."**
+
+Aplicando esse principio ao que ja existe e ao que esta sendo desenhado agora — **nenhuma mudanca de RLS adicional necessaria**, o sistema ja segue essa hierarquia:
+
+| Area | Dono | Professor | Aluno/Responsavel |
+|---|---|---|---|
+| Grade semanal (nova) | Total (critico — estrutural) | Nenhum | Nenhum |
+| Tipos de evento (nova) | Total | Editar (nao critico, cosmetico) | So visualizar |
+| Disponibilidade particular | Qualquer professor | So a propria | Nenhum |
+| Modulos por professor | Qualquer professor | So a propria atribuicao | Nenhum |
+| Usuarios/Convites | Total | Convidar, sem gerenciar depois | Nenhum |
+| Catalogo de Evolucao (novo, `evolucao-vs-desempenho.md` §8) | Total (critico — afeta avaliacao de todos) | Nenhum | Nenhum |
+| Aula particular (`chamada-agenda-frequencia.md` §7) | Total | So a propria reserva | So a propria reserva |
+| Pedido de presenca (autocheckin) | N/A | Aprova/recusa | So pede, pra si mesmo |
+| Configuracoes pessoais (perfil) | Proprio | Proprio | Proprio |
+
+E a tabela que resume a arquitetura de permissao consolidada de todo o app ate aqui — util como referencia rapida pra proximas decisoes, sem precisar reabrir cada documento.
+
+## 7. Backlog gerado por esta retomada
+
+3. `QuickMenu.tsx`: envolver `drawerConteudo` num `ScrollView` — corrige o achado 6.1, independente do resto.
+4. Tela hub "Configuracoes" (`app/(app)/configuracoes/index.tsx`), por papel: dono ve Grade semanal, Horarios por professor, Modulos por professor, Tipos de evento, Usuarios, Catalogo de Evolucao; professor ve so Meus modulos, Horarios livres, Convidar usuario. Substitui os 3 itens hoje soltos no `QuickMenu` por 1 icone so.
+5. Tela nova "Grade semanal" (dono-only): lista por dia da semana, criar/editar horario (dia, hora, modulos), desativar (sempre disponivel) e excluir (so quando nao ha `aulas`/`aulas_teste` vinculadas — checar antes de liberar o botao).
+6. Tela nova "Tipos de evento" (staff, `eh_equipe()`): lista com cor/nome/ordem, CRUD simples, reaproveitando o mesmo padrao visual ja usado em telas de lista pequena do app.
+
+Nao vou implementar nenhum desses itens sem autorizacao explicita pra fase de codigo.

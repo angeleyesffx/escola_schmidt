@@ -1,5 +1,7 @@
 const DIAS_CURTOS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'] as const;
 
+export type ModoCalendario = 'semana' | 'mes';
+
 export type DiaCalendario = {
   data: Date;
   iso: string;
@@ -107,4 +109,12 @@ export function formatIntervaloSemana(dias: DiaCalendario[]) {
   const mesInicio = inicio.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
   const mesFim = fim.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
   return `${inicio.getDate()} ${mesInicio} – ${fim.getDate()} ${mesFim}`;
+}
+
+export function formatHora(hora: string) {
+  return hora.slice(0, 5);
+}
+
+export function formatModulos(modulos: number[]) {
+  return modulos.length === 1 ? `Módulo ${modulos[0]}` : `Módulos ${modulos.join(', ')}`;
 }

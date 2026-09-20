@@ -70,7 +70,7 @@ export default function AlunosIndex() {
     setStatusFiltro('todos');
   }
 
-  if (meuPapel === 'aluno') {
+  if (meuPapel === 'aluno' || meuPapel === 'responsavel') {
     return <Redirect href="/" />;
   }
 
@@ -112,12 +112,16 @@ export default function AlunosIndex() {
           <TouchableOpacity
             style={[styles.chip, statusFiltro === 'ativos' && styles.chipAtivo]}
             onPress={() => setStatusFiltro(statusFiltro === 'ativos' ? 'todos' : 'ativos')}
+            accessibilityRole="button"
+            accessibilityState={{ selected: statusFiltro === 'ativos' }}
           >
             <Text style={[styles.chipTexto, statusFiltro === 'ativos' && styles.chipTextoAtivo]}>Ativos</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.chip, statusFiltro === 'inativos' && styles.chipAtivo]}
             onPress={() => setStatusFiltro(statusFiltro === 'inativos' ? 'todos' : 'inativos')}
+            accessibilityRole="button"
+            accessibilityState={{ selected: statusFiltro === 'inativos' }}
           >
             <Text style={[styles.chipTexto, statusFiltro === 'inativos' && styles.chipTextoAtivo]}>Inativos</Text>
           </TouchableOpacity>
@@ -126,6 +130,8 @@ export default function AlunosIndex() {
               key={m}
               style={[styles.chip, moduloFiltro === m && styles.chipAtivo]}
               onPress={() => setModuloFiltro(moduloFiltro === m ? null : m)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: moduloFiltro === m }}
             >
               <Text style={[styles.chipTexto, moduloFiltro === m && styles.chipTextoAtivo]}>Módulo {m}</Text>
             </TouchableOpacity>

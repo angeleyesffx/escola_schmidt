@@ -2,8 +2,9 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { getHorariosLivresProfessor, remarcarAulaParticular } from '../../../src/features/chamada/api';
+import { excluirAulaParticular, getHorariosLivresProfessor, remarcarAulaParticular } from '../../../src/features/chamada/api';
 import { formatDataISO } from '../../../src/features/chamada/calendar';
+import { confirmar } from '../../../src/lib/confirmar';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { DateRangePicker } from '../../../src/components/DateRangePicker';
 import { Footer } from '../../../src/components/Footer';
@@ -34,6 +35,7 @@ export default function RemarcarAulaParticular() {
   const [carregandoHorarios, setCarregandoHorarios] = useState(false);
   const [horaAula, setHoraAula] = useState('');
   const [salvando, setSalvando] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
@@ -76,6 +78,32 @@ export default function RemarcarAulaParticular() {
     }
   }
 
+  // Mesma permissão de remarcar (RLS aula_exclusao, 0026): dono, o próprio
+  // professor da aula ou o próprio aluno. Libera o horário na hora, já que
+  // horarios_livres_particular só considera linhas que ainda existem em `aulas`.
+  function confirmarCancelamento() {
+    confirmar(
+      'Cancelar aula particular',
+      'O horário fica livre pra qualquer aluno agendar. Essa ação não pode ser desfeita.',
+      'Cancelar aula',
+      cancelar
+    );
+  }
+
+  async function cancelar() {
+    setCancelando(true);
+    setErro(null);
+    try {
+      await excluirAulaParticular(id);
+      if (router.canGoBack()) router.back();
+      else router.replace('/chamada');
+    } catch (err) {
+      console.error(err);
+      setErro('Erro ao cancelar a aula. Tente novamente.');
+      setCancelando(false);
+    }
+  }
+
   return (
     <>
       <PageHeader titulo="Remarcar aula particular" />
@@ -113,14 +141,26 @@ export default function RemarcarAulaParticular() {
         {erro ? <Text style={[type.body, styles.error]}>{erro}</Text> : null}
 
         <TouchableOpacity
-          style={[styles.salvarBotao, (salvando || !horaAula) && styles.botaoDesabilitado]}
+          style={[styles.salvarBotao, (salvando || cancelando || !horaAula) && styles.botaoDesabilitado]}
           onPress={salvar}
-          disabled={salvando || !horaAula}
+          disabled={salvando || cancelando || !horaAula}
         >
           {salvando ? (
             <ActivityIndicator color={colors.onPrimary} />
           ) : (
             <Text style={styles.salvarBotaoTexto}>Confirmar nova data/hora</Text>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.cancelarBotao, (salvando || cancelando) && styles.botaoDesabilitado]}
+          onPress={confirmarCancelamento}
+          disabled={salvando || cancelando}
+        >
+          {cancelando ? (
+            <ActivityIndicator color={colors.danger} />
+          ) : (
+            <Text style={styles.cancelarBotaoTexto}>Cancelar aula</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -184,6 +224,20 @@ const styles = StyleSheet.create({
   },
   salvarBotaoTexto: {
     color: colors.onPrimary,
+    fontFamily: type.subtitle.fontFamily,
+    fontSize: type.subtitle.fontSize,
+  },
+  cancelarBotao: {
+    height: touchTarget,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.md,
+  },
+  cancelarBotaoTexto: {
+    color: colors.danger,
     fontFamily: type.subtitle.fontFamily,
     fontSize: type.subtitle.fontSize,
   },

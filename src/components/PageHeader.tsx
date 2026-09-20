@@ -27,7 +27,7 @@ export function PageHeader({ titulo, mostrarVoltar = true, mostrarMenu = true }:
         {mostrarVoltar ? (
           <TouchableOpacity
             style={styles.navBotao}
-            onPress={() => router.back()}
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
             accessibilityRole="button"
             accessibilityLabel="Voltar"
             hitSlop={8}

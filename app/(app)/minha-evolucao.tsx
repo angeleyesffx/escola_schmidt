@@ -8,7 +8,7 @@ import { EvolucaoScreen } from '../../src/features/evolucao/EvolucaoScreen';
 export default function MinhaEvolucaoScreen() {
   const { meuAluno, meuPapel } = useAuth();
 
-  if (meuPapel === null || (meuPapel === 'aluno' && !meuAluno)) {
+  if (meuPapel === null || ((meuPapel === 'aluno' || meuPapel === 'responsavel') && !meuAluno)) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
         <ActivityIndicator color={colors.primary} />
@@ -16,7 +16,7 @@ export default function MinhaEvolucaoScreen() {
     );
   }
 
-  if (meuPapel !== 'aluno') {
+  if (meuPapel !== 'aluno' && meuPapel !== 'responsavel') {
     return <Redirect href="/" />;
   }
 

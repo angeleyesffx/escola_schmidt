@@ -1,5 +1,5 @@
 import { Redirect, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -17,7 +17,8 @@ import { useAuth } from '../../../src/features/auth/AuthProvider';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
 import { Chip } from '../../../src/components/Chip';
-import { hojeBR, paraISO } from '../../../src/lib/dataBR';
+import { DateRangePicker } from '../../../src/components/DateRangePicker';
+import { hojeBR, paraBR, paraISO } from '../../../src/lib/dataBR';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -54,11 +55,37 @@ export default function NovoAluno() {
   const [error, setError] = useState<string | null>(null);
   const [avisoConvite, setAvisoConvite] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Escolha de data por calendário, não digitação — cadastro é feito em pé,
+  // na beira da pista, mesmo contexto de luva que definiu o touchTarget do
+  // tema. Só um desses três pode estar aberto por vez.
+  const [campoDataAberto, setCampoDataAberto] = useState<'nascimento' | 'inicio' | 'fim' | null>(null);
+  // Formulário longo: sem isso, um erro no campo de email fica fora da tela
+  // quando o erro só aparece perto do botão "Salvar aluno", lá embaixo.
+  const scrollRef = useRef<ScrollView>(null);
+  const emailYRef = useRef(0);
 
   function escolherPlano(novoPlano: Plano) {
     setPlano(novoPlano);
     const meses = PLANOS.find((p) => p.valor === novoPlano)?.meses ?? 1;
     setDataFim(somaMeses(dataInicio, meses));
+  }
+
+  function selecionarDataNascimento(iso: string) {
+    setDataNascimento(paraBR(iso));
+    setCampoDataAberto(null);
+  }
+
+  function selecionarDataInicio(iso: string) {
+    const dataBR = paraBR(iso);
+    setDataInicio(dataBR);
+    const meses = PLANOS.find((p) => p.valor === plano)?.meses ?? 1;
+    setDataFim(somaMeses(dataBR, meses));
+    setCampoDataAberto(null);
+  }
+
+  function selecionarDataFim(iso: string) {
+    setDataFim(paraBR(iso));
+    setCampoDataAberto(null);
   }
 
   async function salvar() {
@@ -67,6 +94,7 @@ export default function NovoAluno() {
 
     if (!nome.trim()) {
       setError('Informe o nome do aluno.');
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
       return;
     }
 
@@ -86,6 +114,7 @@ export default function NovoAluno() {
     const emailValido = !emailAcesso.trim() || EMAIL_REGEX.test(emailAcesso.trim());
     if (!emailValido) {
       setError('Informe um email válido para dar acesso ao aplicativo, ou deixe em branco.');
+      scrollRef.current?.scrollTo({ y: emailYRef.current, animated: true });
       return;
     }
 
@@ -121,7 +150,8 @@ export default function NovoAluno() {
         }
       }
 
-      router.back();
+      if (router.canGoBack()) router.back();
+      else router.replace('/');
     } catch (err) {
       console.error(err);
       setError('Erro ao salvar aluno. Tente novamente.');
@@ -130,7 +160,7 @@ export default function NovoAluno() {
     }
   }
 
-  if (meuPapel === 'aluno') {
+  if (meuPapel === 'aluno' || meuPapel === 'responsavel') {
     return <Redirect href="/" />;
   }
 
@@ -138,18 +168,28 @@ export default function NovoAluno() {
     <>
     <PageHeader titulo="Novo aluno" />
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <Text style={[type.label, styles.rotulo]}>Nome</Text>
         <TextInput style={styles.input} value={nome} onChangeText={setNome} placeholder="Nome completo" />
 
         <Text style={[type.label, styles.rotulo]}>Data de nascimento (opcional)</Text>
-        <TextInput
-          style={styles.input}
-          value={dataNascimento}
-          onChangeText={setDataNascimento}
-          placeholder="DD/MM/AAAA"
-          keyboardType="numbers-and-punctuation"
-        />
+        <TouchableOpacity
+          style={styles.dataBotao}
+          onPress={() => setCampoDataAberto(campoDataAberto === 'nascimento' ? null : 'nascimento')}
+        >
+          <Text style={dataNascimento ? styles.dataBotaoTexto : styles.dataBotaoPlaceholder}>
+            {dataNascimento || 'Selecionar data'}
+          </Text>
+        </TouchableOpacity>
+        {campoDataAberto === 'nascimento' ? (
+          <DateRangePicker
+            apenasUmDia
+            inicioISO={paraISO(dataNascimento) ?? paraISO(hojeBR())!}
+            fimISO={paraISO(dataNascimento) ?? paraISO(hojeBR())!}
+            onConfirmar={selecionarDataNascimento}
+            onFechar={() => setCampoDataAberto(null)}
+          />
+        ) : null}
 
         <Text style={[type.label, styles.rotulo]}>Módulo</Text>
         <View style={styles.chips}>
@@ -173,21 +213,23 @@ export default function NovoAluno() {
           keyboardType="phone-pad"
         />
 
-        <Text style={[type.label, styles.rotulo]}>Email do responsável (opcional)</Text>
-        <TextInput
-          style={styles.input}
-          value={emailAcesso}
-          onChangeText={setEmailAcesso}
-          placeholder="email@exemplo.com"
-          autoCapitalize="none"
-          autoComplete="email"
-          keyboardType="email-address"
-        />
-        <Text style={[type.caption, styles.dicaEmail]}>
-          Preenchendo, o aluno (ou responsável) já recebe um convite por email pra criar a própria senha agora. Se
-          ele preferir se cadastrar sozinho depois, o app vincula a conta automaticamente por esse mesmo email — sem
-          precisar de convite nem de vínculo manual.
-        </Text>
+        <View onLayout={(e) => { emailYRef.current = e.nativeEvent.layout.y; }}>
+          <Text style={[type.label, styles.rotulo]}>Email do responsável (opcional)</Text>
+          <TextInput
+            style={styles.input}
+            value={emailAcesso}
+            onChangeText={setEmailAcesso}
+            placeholder="email@exemplo.com"
+            autoCapitalize="none"
+            autoComplete="email"
+            keyboardType="email-address"
+          />
+          <Text style={[type.caption, styles.dicaEmail]}>
+            Preenchendo, o aluno (ou responsável) já recebe um convite por email pra criar a própria senha agora. Se
+            ele preferir se cadastrar sozinho depois, o app vincula a conta automaticamente por esse mesmo email — sem
+            precisar de convite nem de vínculo manual.
+          </Text>
+        </View>
 
         <Text style={[type.label, styles.rotulo]}>Plano</Text>
         <View style={styles.chips}>
@@ -197,33 +239,45 @@ export default function NovoAluno() {
         </View>
 
         <Text style={[type.label, styles.rotulo]}>Início do contrato</Text>
-        <TextInput
-          style={styles.input}
-          value={dataInicio}
-          onChangeText={(texto) => {
-            setDataInicio(texto);
-            const meses = PLANOS.find((p) => p.valor === plano)?.meses ?? 1;
-            setDataFim(somaMeses(texto, meses));
-          }}
-          placeholder="DD/MM/AAAA"
-          keyboardType="numbers-and-punctuation"
-        />
+        <TouchableOpacity
+          style={styles.dataBotao}
+          onPress={() => setCampoDataAberto(campoDataAberto === 'inicio' ? null : 'inicio')}
+        >
+          <Text style={styles.dataBotaoTexto}>{dataInicio}</Text>
+        </TouchableOpacity>
+        {campoDataAberto === 'inicio' ? (
+          <DateRangePicker
+            apenasUmDia
+            inicioISO={paraISO(dataInicio) ?? paraISO(hojeBR())!}
+            fimISO={paraISO(dataInicio) ?? paraISO(hojeBR())!}
+            onConfirmar={selecionarDataInicio}
+            onFechar={() => setCampoDataAberto(null)}
+          />
+        ) : null}
 
         <Text style={[type.label, styles.rotulo]}>Fim do contrato</Text>
-        <TextInput
-          style={styles.input}
-          value={dataFim}
-          onChangeText={setDataFim}
-          placeholder="DD/MM/AAAA"
-          keyboardType="numbers-and-punctuation"
-        />
+        <TouchableOpacity
+          style={styles.dataBotao}
+          onPress={() => setCampoDataAberto(campoDataAberto === 'fim' ? null : 'fim')}
+        >
+          <Text style={styles.dataBotaoTexto}>{dataFim}</Text>
+        </TouchableOpacity>
+        {campoDataAberto === 'fim' ? (
+          <DateRangePicker
+            apenasUmDia
+            inicioISO={paraISO(dataFim) ?? paraISO(hojeBR())!}
+            fimISO={paraISO(dataFim) ?? paraISO(hojeBR())!}
+            onConfirmar={selecionarDataFim}
+            onFechar={() => setCampoDataAberto(null)}
+          />
+        ) : null}
 
         {error ? <Text style={[type.body, styles.error]}>{error}</Text> : null}
         {avisoConvite ? <Text style={[type.body, styles.aviso]}>{avisoConvite}</Text> : null}
 
         <TouchableOpacity
           style={[styles.salvarBotao, submitting && styles.salvarBotaoDesabilitado]}
-          onPress={avisoConvite ? () => router.back() : salvar}
+          onPress={avisoConvite ? () => (router.canGoBack() ? router.back() : router.replace('/')) : salvar}
           disabled={submitting}
         >
           {submitting ? (
@@ -268,6 +322,25 @@ const styles = StyleSheet.create({
   inputEspacado: {
     marginTop: spacing.sm,
   },
+  dataBotao: {
+    height: touchTarget,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.surface,
+  },
+  dataBotaoTexto: {
+    fontFamily: type.body.fontFamily,
+    fontSize: type.body.fontSize,
+    color: colors.text,
+  },
+  dataBotaoPlaceholder: {
+    fontFamily: type.body.fontFamily,
+    fontSize: type.body.fontSize,
+    color: colors.textMuted,
+  },
   chips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -281,8 +354,11 @@ const styles = StyleSheet.create({
     color: colors.danger,
     marginTop: spacing.lg,
   },
+  // Amber (mesmo tom usado em "Pedido enviado" na chamada), não danger: o
+  // aluno foi salvo com sucesso, só o convite falhou — pintar de vermelho
+  // fazia parecer que nada tinha sido salvo.
   aviso: {
-    color: colors.danger,
+    color: colors.justified,
     marginTop: spacing.lg,
   },
   salvarBotao: {

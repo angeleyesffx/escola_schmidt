@@ -505,7 +505,7 @@ describe('AuthProvider', () => {
     expect(mockPapelSingle).not.toHaveBeenCalled();
   });
 
-  it('loads the linked student record only when the role is aluno', async () => {
+  it('loads the linked student record when the role is aluno', async () => {
     mockGetSession.mockResolvedValueOnce({
       data: { session: { user: { id: 'user-1', email: 'aluna@escola.com' } } },
     });
@@ -531,7 +531,37 @@ describe('AuthProvider', () => {
     expect(await screen.findByText('Ana')).toBeTruthy();
   });
 
-  it('does not look up a student record for non-aluno roles', async () => {
+  // responsavel (supabase/migrations/0029-0030): conta que o vínculo por
+  // e-mail (0020) liga a um registro de aluno em nome do responsável, não
+  // do próprio atleta. Acesso precisa ser idêntico ao de aluno — inclusive
+  // carregar o mesmo `meuAluno`, já que nenhuma RLS distingue os dois papéis.
+  it('loads the linked student record when the role is responsavel', async () => {
+    mockGetSession.mockResolvedValueOnce({
+      data: { session: { user: { id: 'user-1', email: 'responsavel@escola.com' } } },
+    });
+    mockPapelSingle.mockResolvedValueOnce({ data: { papel: 'responsavel', ativo: true }, error: null });
+    mockAlunoMaybeSingle.mockResolvedValueOnce({
+      data: {
+        id: 'aluno-1',
+        nome: 'Ana',
+        modulo: 1,
+        data_nascimento: null,
+        responsavel_nome: null,
+        responsavel_telefone: null,
+      },
+      error: null,
+    });
+
+    await render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>
+    );
+
+    expect(await screen.findByText('Ana')).toBeTruthy();
+  });
+
+  it('does not look up a student record for non-aluno, non-responsavel roles', async () => {
     mockGetSession.mockResolvedValueOnce({
       data: { session: { user: { id: 'user-1', email: 'prof@escola.com' } } },
     });

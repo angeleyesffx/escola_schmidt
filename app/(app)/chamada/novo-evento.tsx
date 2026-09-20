@@ -2,7 +2,6 @@ import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -23,6 +22,7 @@ import {
 } from '../../../src/features/eventos/api';
 import { formatDataISO } from '../../../src/features/chamada/calendar';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
+import { confirmar } from '../../../src/lib/confirmar';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { DateRangePicker } from '../../../src/components/DateRangePicker';
 import { Footer } from '../../../src/components/Footer';
@@ -102,7 +102,8 @@ export default function NovoEvento() {
       } else {
         await criarEvento(tipoId, titulo.trim(), inicioISO, fimISO, descricao.trim() || null, session?.user.id ?? null);
       }
-      router.back();
+      if (router.canGoBack()) router.back();
+      else router.replace('/');
     } catch (err) {
       console.error(err);
       setError('Erro ao salvar evento. Tente novamente.');
@@ -113,10 +114,7 @@ export default function NovoEvento() {
 
   function confirmarExclusao() {
     if (!id) return;
-    Alert.alert('Excluir evento', 'Tem certeza que quer excluir esse evento?', [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Excluir', style: 'destructive', onPress: excluir },
-    ]);
+    confirmar('Excluir evento', 'Tem certeza que quer excluir esse evento?', 'Excluir', excluir);
   }
 
   async function excluir() {
@@ -125,7 +123,8 @@ export default function NovoEvento() {
     setError(null);
     try {
       await excluirEvento(id);
-      router.back();
+      if (router.canGoBack()) router.back();
+      else router.replace('/');
     } catch (err) {
       console.error(err);
       setError('Erro ao excluir evento. Tente novamente.');
@@ -135,7 +134,7 @@ export default function NovoEvento() {
 
   const tituloPagina = editando ? 'Editar evento' : 'Novo evento';
 
-  if (meuPapel === 'aluno') {
+  if (meuPapel === 'aluno' || meuPapel === 'responsavel') {
     return <Redirect href="/" />;
   }
 
@@ -164,6 +163,8 @@ export default function NovoEvento() {
                 key={t.id}
                 style={[styles.chip, { borderColor: t.cor }, ativo && { backgroundColor: t.cor }]}
                 onPress={() => setTipoId(t.id)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: ativo }}
               >
                 <View style={[styles.chipCor, { backgroundColor: t.cor }]} />
                 <Text style={[styles.chipTexto, ativo && styles.chipTextoAtivo]}>{t.nome}</Text>

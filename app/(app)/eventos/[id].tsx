@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { excluirEvento, getEvento, getTiposEvento } from '../../../src/features/eventos/api';
 import { formatDataExtenso } from '../../../src/features/chamada/calendar';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
+import { confirmar } from '../../../src/lib/confirmar';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
@@ -36,10 +37,7 @@ export default function DetalheEvento() {
   const error = erroExcluir ?? erroCarregar;
 
   function confirmarExclusao() {
-    Alert.alert('Excluir evento', 'Tem certeza que quer excluir esse evento?', [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Excluir', style: 'destructive', onPress: excluir },
-    ]);
+    confirmar('Excluir evento', 'Tem certeza que quer excluir esse evento?', 'Excluir', excluir);
   }
 
   async function excluir() {
@@ -47,7 +45,8 @@ export default function DetalheEvento() {
     setErroExcluir(null);
     try {
       await excluirEvento(id);
-      router.back();
+      if (router.canGoBack()) router.back();
+      else router.replace('/');
     } catch (err) {
       console.error(err);
       setErroExcluir('Erro ao excluir evento. Tente novamente.');

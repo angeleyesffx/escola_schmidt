@@ -29,7 +29,7 @@ export default function Home() {
   const { meuPapel } = useAuth();
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const souAluno = meuPapel === 'aluno';
+  const souAluno = (meuPapel === 'aluno' || meuPapel === 'responsavel');
   const duasColunas = width >= 760;
   const larguraGrid = Math.min(width - spacing.xl * 2, 980);
   const heroAltura = width >= 980 ? 192 : width >= 760 ? 176 : 168;
@@ -121,7 +121,12 @@ export default function Home() {
 
           {!souAluno ? (
             <TouchableOpacity
-              style={[styles.cardAcao, duasColunas && styles.cardAcaoMetade, { minHeight: cardMinHeight, padding: cardPadding }]}
+              style={[
+                styles.cardAcao,
+                duasColunas && styles.cardAcaoMetade,
+                { minHeight: cardMinHeight, padding: cardPadding },
+                aulasHoje.length === 0 && styles.cardAcaoOpaco,
+              ]}
               onPress={abrirListaChamada}
             >
               <View style={[styles.cardImagemWrap, { width: imagemLado, height: imagemLado }]}>
@@ -132,7 +137,9 @@ export default function Home() {
                 {aulasHoje.length === 0 ? 'Sem turmas agendadas para hoje.' : 'Abra a chamada das turmas de hoje.'}
               </Text>
               <View style={styles.cardAcaoRodape}>
-                <Text style={styles.cardAcaoTexto}>Ver turmas</Text>
+                <Text style={styles.cardAcaoTexto}>
+                  {aulasHoje.length === 0 ? 'Ver agenda completa' : 'Ver turmas'}
+                </Text>
                 <View style={styles.cardAcaoSetaWrap}>
                   <Text style={styles.cardAcaoSeta}>›</Text>
                 </View>
@@ -244,6 +251,11 @@ const styles = StyleSheet.create({
   },
   cardAcaoMetade: {
     width: '48.8%',
+  },
+  // Sem aula hoje o toque ainda leva pra agenda completa (não "some"), mas
+  // precisa parecer diferente de um card com ação disponível agora.
+  cardAcaoOpaco: {
+    opacity: 0.6,
   },
   cardImagemWrap: {
     borderRadius: radius.md,

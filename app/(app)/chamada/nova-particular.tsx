@@ -35,7 +35,7 @@ function formatHora(hora: string) {
 export default function NovaAulaParticular() {
   const router = useRouter();
   const { meuPapel, session, meuAluno } = useAuth();
-  const souAluno = meuPapel === 'aluno';
+  const souAluno = (meuPapel === 'aluno' || meuPapel === 'responsavel');
 
   const [alunoId, setAlunoId] = useState<string | null>(null);
   const [professorId, setProfessorId] = useState<string | null>(null);

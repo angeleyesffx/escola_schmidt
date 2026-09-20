@@ -11,7 +11,7 @@ import { definirLembrarLogin } from '../../lib/rememberMeStorage';
 // voltando de segundo plano depois de tempo demais fora.
 const TEMPO_INATIVIDADE_MS = 30 * 60 * 1000;
 
-export type Papel = 'dono' | 'professor' | 'aluno';
+export type Papel = 'dono' | 'professor' | 'aluno' | 'responsavel';
 
 export type Titular = 'proprio' | 'responsavel';
 
@@ -136,7 +136,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // Alimenta a tela "Meu perfil" e as travas de autocheckin (data/módulo da
   // própria aula) — só existe pra quem é aluno e já foi vinculado a um registro.
   useEffect(() => {
-    if (meuPapel !== 'aluno' || !session?.user.id) {
+    if ((meuPapel !== 'aluno' && meuPapel !== 'responsavel') || !session?.user.id) {
       setMeuAluno(null);
       return;
     }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import ChamadaDetalhe from '../[id]';
 import {
@@ -164,6 +164,79 @@ describe('ChamadaDetalhe', () => {
 
     await fireEvent.press(screen.getByTestId('chamada-detalhe-status-button-aluno-1-falta_justificada'));
     expect(mockMarcarPresenca).toHaveBeenCalledTimes(1);
+  });
+
+  // Antes desta correção, o conflito era um estado único pra chamada
+  // inteira: um toque duplo em Ana travava até o botão de Bruno, exigindo
+  // recarregar a página inteira pra editar qualquer outro aluno.
+  it('a conflict on one student does not block editing another', async () => {
+    mockGetAlunosPorModulos.mockResolvedValueOnce([
+      { id: 'aluno-1', nome: 'Ana', modulo: 1 },
+      { id: 'aluno-2', nome: 'Bruno', modulo: 1 },
+    ]);
+    mockMarcarPresenca.mockRejectedValueOnce(new ConflitoPresencaError());
+    mockMarcarPresenca.mockResolvedValueOnce('2026-09-18T10:30:00.000Z');
+
+    await render(<ChamadaDetalhe />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Ana')).toBeTruthy();
+      expect(screen.getByText('Bruno')).toBeTruthy();
+    });
+
+    await fireEvent.press(screen.getByTestId('chamada-detalhe-status-button-aluno-1-presente'));
+    expect(await screen.findByTestId('chamada-detalhe-conflito-banner')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('chamada-detalhe-status-button-aluno-2-presente'));
+
+    await waitFor(() => {
+      expect(mockMarcarPresenca).toHaveBeenCalledWith('aula-1', 'aluno-2', 'presente', 'user-1', null);
+    });
+  });
+
+  // Causa raiz do conflito falso-positivo que o professor via ao corrigir um
+  // clique errado rápido: duas chamadas simultâneas pro mesmo aluno corriam
+  // o SELECT-then-UPSERT de marcarPresenca em paralelo. Ignorar o segundo
+  // toque enquanto o primeiro ainda está em voo elimina essa corrida.
+  it('ignores a second tap on the same student while its save is still in flight', async () => {
+    // Timers reais aqui: o act() assíncrono que espera o promise pendente
+    // resolver depende do scheduler do React, que não avança sozinho sob
+    // fake timers (a data selecionada já vem fixa do query param no mock).
+    jest.useRealTimers();
+    let resolvePrimeiro: (valor: string) => void = () => {};
+    mockMarcarPresenca.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolvePrimeiro = resolve;
+        })
+    );
+
+    await render(<ChamadaDetalhe />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Ana')).toBeTruthy();
+    });
+
+    // Não aguarda: o handler (marcar) fica suspenso no await de
+    // marcarPresenca até resolvePrimeiro ser chamado lá embaixo — awaitar
+    // fireEvent.press aqui prenderia o teste nesse mesmo suspense. A parte
+    // síncrona do handler (a checagem de alunosSalvando e os setState) já
+    // roda antes do fireEvent.press devolver o controle.
+    fireEvent.press(screen.getByTestId('chamada-detalhe-status-button-aluno-1-presente'));
+    // Cede um tick real pro React flushar o setAlunosSalvando síncrono do
+    // primeiro toque antes do segundo — sem isso os dois toques correm
+    // sobre o mesmo estado "sem ninguém salvando" e o teste não reproduz
+    // a corrida que o guard em marcar() existe pra evitar.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.press(screen.getByTestId('chamada-detalhe-status-button-aluno-1-falta'));
+
+    expect(mockMarcarPresenca).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolvePrimeiro('2026-09-18T10:30:00.000Z');
+    });
+
+    expect(screen.queryByTestId('chamada-detalhe-conflito-banner')).toBeNull();
   });
 
   it('restores previous status when save fails and keeps version for retry', async () => {

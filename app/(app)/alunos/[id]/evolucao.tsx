@@ -17,7 +17,7 @@ export default function EvolucaoAlunoPorIdScreen() {
     );
   }
 
-  if (meuPapel === 'aluno') {
+  if (meuPapel === 'aluno' || meuPapel === 'responsavel') {
     if (!meuAluno) {
       return (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>

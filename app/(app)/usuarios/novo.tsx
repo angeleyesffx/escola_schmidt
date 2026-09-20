@@ -23,6 +23,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const PAPEIS: { valor: Papel; label: string }[] = [
   { valor: 'aluno', label: 'Aluno' },
+  { valor: 'responsavel', label: 'Responsável' },
   { valor: 'professor', label: 'Professor(a)' },
   { valor: 'dono', label: 'Dono' },
 ];
@@ -82,7 +83,7 @@ export default function NovoUsuario() {
           <TouchableOpacity
             testID="usuarios-convite-voltar"
             style={styles.salvarBotao}
-            onPress={() => router.back()}
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
           >
             <Text style={styles.salvarBotaoTexto}>Voltar</Text>
           </TouchableOpacity>

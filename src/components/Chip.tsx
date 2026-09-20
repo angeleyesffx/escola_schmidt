@@ -23,6 +23,8 @@ export function Chip({ label, active, onPress, square = false, variant = 'surfac
         active && styles.ativo,
       ]}
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
     >
       <Text style={[styles.texto, active && styles.textoAtivo]}>{label}</Text>
     </TouchableOpacity>

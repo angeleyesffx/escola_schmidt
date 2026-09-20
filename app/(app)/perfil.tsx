@@ -16,10 +16,11 @@ import { useAuth } from '../../src/features/auth/AuthProvider';
 import { atualizarMeuPerfil, getMeuPerfil } from '../../src/features/perfil/api';
 import { atualizarDadosAluno } from '../../src/features/alunos/api';
 import { useAsyncData } from '../../src/hooks/useAsyncData';
-import { paraBR, paraISO } from '../../src/lib/dataBR';
+import { hojeBR, paraBR, paraISO } from '../../src/lib/dataBR';
 import { PageHeader } from '../../src/components/PageHeader';
 import { PersonIcon } from '../../src/components/PersonIcon';
 import { PasswordInput } from '../../src/components/PasswordInput';
+import { DateRangePicker } from '../../src/components/DateRangePicker';
 import { Footer } from '../../src/components/Footer';
 import { colors, fonts, radius, spacing, touchTarget, type } from '../../src/constants/theme';
 
@@ -39,7 +40,7 @@ const REGRAS_SENHA: { chave: string; label: string; cumprida: (senha: string) =>
 export default function Perfil() {
   const { session, meuPapel, meuAluno, changePassword } = useAuth();
   const router = useRouter();
-  const souAluno = meuPapel === 'aluno';
+  const souAluno = (meuPapel === 'aluno' || meuPapel === 'responsavel');
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -59,6 +60,7 @@ export default function Perfil() {
   const [salvandoAluno, setSalvandoAluno] = useState(false);
   const [erroAluno, setErroAluno] = useState<string | null>(null);
   const [sucessoAluno, setSucessoAluno] = useState<string | null>(null);
+  const [pickerNascimentoAberto, setPickerNascimentoAberto] = useState(false);
 
   const senhaOk = REGRAS_SENHA.every((regra) => regra.cumprida(novaSenha));
 
@@ -85,6 +87,12 @@ export default function Perfil() {
     setResponsavelNomeAluno(meuAluno.responsavel_nome ?? '');
     setResponsavelTelefoneAluno(meuAluno.responsavel_telefone ?? '');
   }, [meuAluno]);
+
+  function selecionarDataNascimentoAluno(iso: string) {
+    setDataNascimentoAluno(paraBR(iso));
+    if (sucessoAluno) setSucessoAluno(null);
+    setPickerNascimentoAberto(false);
+  }
 
   async function salvarDadosAluno() {
     if (!meuAluno) return;
@@ -329,16 +337,20 @@ export default function Perfil() {
               />
 
               <Text style={[type.label, styles.rotulo]}>Data de nascimento (opcional)</Text>
-              <TextInput
-                style={styles.input}
-                value={dataNascimentoAluno}
-                onChangeText={(texto) => {
-                  setDataNascimentoAluno(texto);
-                  if (sucessoAluno) setSucessoAluno(null);
-                }}
-                placeholder="DD/MM/AAAA"
-                keyboardType="numbers-and-punctuation"
-              />
+              <TouchableOpacity style={styles.dataBotao} onPress={() => setPickerNascimentoAberto((atual) => !atual)}>
+                <Text style={dataNascimentoAluno ? styles.dataBotaoTexto : styles.dataBotaoPlaceholder}>
+                  {dataNascimentoAluno || 'Selecionar data'}
+                </Text>
+              </TouchableOpacity>
+              {pickerNascimentoAberto ? (
+                <DateRangePicker
+                  apenasUmDia
+                  inicioISO={paraISO(dataNascimentoAluno) ?? paraISO(hojeBR())!}
+                  fimISO={paraISO(dataNascimentoAluno) ?? paraISO(hojeBR())!}
+                  onConfirmar={selecionarDataNascimentoAluno}
+                  onFechar={() => setPickerNascimentoAberto(false)}
+                />
+              ) : null}
 
               <Text style={[type.label, styles.rotulo]}>Responsável (opcional)</Text>
               <TextInput
@@ -468,6 +480,25 @@ const styles = StyleSheet.create({
   },
   inputEspacado: {
     marginTop: spacing.sm,
+  },
+  dataBotao: {
+    height: touchTarget,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.surface,
+  },
+  dataBotaoTexto: {
+    fontFamily: type.body.fontFamily,
+    fontSize: type.body.fontSize,
+    color: colors.text,
+  },
+  dataBotaoPlaceholder: {
+    fontFamily: type.body.fontFamily,
+    fontSize: type.body.fontSize,
+    color: colors.textMuted,
   },
   regrasSenha: {
     borderWidth: 1,

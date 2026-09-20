@@ -10,7 +10,7 @@ export default function AgendarAula() {
   const router = useRouter();
   const { meuPapel } = useAuth();
 
-  if (meuPapel === 'aluno') {
+  if (meuPapel === 'aluno' || meuPapel === 'responsavel') {
     return <Redirect href="/" />;
   }
 

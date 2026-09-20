@@ -194,9 +194,11 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     marginTop: spacing.xs,
   },
+  // Mesma altura do touchTarget do tema — esse calendário agora também é
+  // usado no cadastro de aluno, em pé na beira da pista.
   dia: {
     width: LARGURA_COLUNA,
-    height: 40,
+    height: touchTarget,
     alignItems: 'center',
     justifyContent: 'center',
   },

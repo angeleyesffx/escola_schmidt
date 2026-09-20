@@ -36,7 +36,7 @@ export default function ListaChamada() {
   const meusSlots = new Set((responsabilidades ?? []).map((r) => r.aula_recorrente_id));
   const aulasHoje = (data ?? []).filter((aula) => !souProfessor || meusSlots.has(aula.id));
 
-  if (meuPapel === 'aluno') {
+  if (meuPapel === 'aluno' || meuPapel === 'responsavel') {
     return <Redirect href="/" />;
   }
 

@@ -103,6 +103,22 @@ export default {
         );
       }
 
+      // Mesmo critério do vínculo automático por e-mail (0030): quem loga
+      // vinculado a um registro de aluno é, por padrão, o responsável por
+      // ele — não o próprio atleta. cria_perfil_novo_usuario() já inseriu
+      // 'aluno' (default seguro); corrige aqui pro papel real.
+      const { error: papelError } = await supabaseAdmin
+        .from('perfis')
+        .update({ papel: 'responsavel' })
+        .eq('id', convite.user.id);
+
+      if (papelError) {
+        return Response.json(
+          { ok: false, error: 'Aluno vinculado, mas não foi possível ajustar o papel da conta.' },
+          { status: 500, headers: corsHeaders }
+        );
+      }
+
       return Response.json({ ok: true, perfil_id: convite.user.id }, { headers: corsHeaders });
     } catch (err) {
       const mensagem = err instanceof Error ? err.message : String(err);

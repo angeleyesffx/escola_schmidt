@@ -58,7 +58,7 @@ export default function ChamadaDetalhe() {
   const { id, data } = useLocalSearchParams<{ id: string; data?: string }>();
   const router = useRouter();
   const { session, meuPapel, meuAluno } = useAuth();
-  const souAluno = meuPapel === 'aluno';
+  const souAluno = (meuPapel === 'aluno' || meuPapel === 'responsavel');
   const dataSelecionada = dataValidaOuHoje(data);
 
   type RegistroLocal = { status: StatusPresenca; registradoEm: string | null };
@@ -69,7 +69,11 @@ export default function ChamadaDetalhe() {
   const [horario, setHorario] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [conflito, setConflito] = useState(false);
+  // Conflito e "salvando" são por aluno, não da chamada inteira — antes, um
+  // toque duplo (corrigindo um erro de marcação) travava a lista toda até
+  // recarregar a página, mesmo sem ninguém mais mexendo na chamada de verdade.
+  const [conflitoAlunoId, setConflitoAlunoId] = useState<string | null>(null);
+  const [alunosSalvando, setAlunosSalvando] = useState<Set<string>>(new Set());
 
   // Pedido de presença: só existe pra aluno, só no dia da própria aula, do
   // próprio módulo — e só vira presença de fato quando a equipe aprova.
@@ -90,7 +94,7 @@ export default function ChamadaDetalhe() {
   const carregar = useCallback(async () => {
     setLoading(true);
     setError(null);
-    setConflito(false);
+    setConflitoAlunoId(null);
     try {
       const recorrente = await getAulaRecorrente(id);
       setHorario(recorrente.hora.slice(0, 5));
@@ -152,8 +156,13 @@ export default function ChamadaDetalhe() {
   );
 
   async function marcar(alunoId: string, status: StatusPresenca) {
-    if (!aulaId) return;
+    // Ignora toque em cima de um salvamento ainda em voo pro mesmo aluno —
+    // é exatamente essa sobreposição (corrigir rápido um clique errado) que
+    // fazia o SELECT-then-UPSERT de marcarPresenca enxergar versão trocada
+    // e disparar ConflitoPresencaError sem ninguém mais ter mexido na chamada.
+    if (!aulaId || alunosSalvando.has(alunoId)) return;
     const anterior = presencas[alunoId];
+    setAlunosSalvando((atual) => new Set(atual).add(alunoId));
     setPresencas((atual) => ({ ...atual, [alunoId]: { status, registradoEm: anterior?.registradoEm ?? null } }));
     try {
       const registradoEm = await marcarPresenca(
@@ -167,11 +176,17 @@ export default function ChamadaDetalhe() {
     } catch (err) {
       setPresencas((atual) => ({ ...atual, [alunoId]: anterior }));
       if (err instanceof ConflitoPresencaError) {
-        setConflito(true);
+        setConflitoAlunoId(alunoId);
       } else {
         console.error(err);
         setError('Erro ao salvar presença. Tente novamente.');
       }
+    } finally {
+      setAlunosSalvando((atual) => {
+        const novo = new Set(atual);
+        novo.delete(alunoId);
+        return novo;
+      });
     }
   }
 
@@ -386,7 +401,7 @@ export default function ChamadaDetalhe() {
         </Text>
       ) : null}
 
-      {conflito ? (
+      {conflitoAlunoId ? (
         <View testID="chamada-detalhe-conflito-banner" style={styles.conflitoAviso}>
           <Text testID="chamada-detalhe-conflito-mensagem" style={[type.body, styles.conflitoTexto]}>
             Esta chamada foi atualizada por outra pessoa. Recarregue para continuar.
@@ -480,6 +495,9 @@ export default function ChamadaDetalhe() {
               <View style={styles.botoes}>
                 {ESTADOS.map((estado) => {
                   const ativo = status === estado.status;
+                  // Só trava a linha do próprio aluno (conflito real ou salvamento em
+                  // voo) — o resto da chamada continua editável normalmente.
+                  const bloqueado = conflitoAlunoId === item.id || alunosSalvando.has(item.id);
                   return (
                     <TouchableOpacity
                       key={estado.status}
@@ -487,10 +505,10 @@ export default function ChamadaDetalhe() {
                       style={[
                         styles.botao,
                         { backgroundColor: ativo ? colors[estado.cor] : colors.pending },
-                        conflito && styles.botaoDesabilitado,
+                        bloqueado && styles.botaoDesabilitado,
                       ]}
                       onPress={() => marcar(item.id, estado.status)}
-                      disabled={conflito}
+                      disabled={bloqueado}
                     >
                       <Text style={styles.botaoTexto}>{estado.label}</Text>
                     </TouchableOpacity>

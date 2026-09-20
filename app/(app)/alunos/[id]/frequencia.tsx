@@ -37,7 +37,7 @@ export default function FrequenciaAluno() {
   const aluno = data?.aluno ?? null;
   const registros = data?.registros ?? [];
 
-  if (meuPapel === 'aluno') {
+  if (meuPapel === 'aluno' || meuPapel === 'responsavel') {
     if (!meuAluno) {
       return (
         <View style={styles.center}>

@@ -132,3 +132,81 @@ Somado ao backlog ja aberto em `papeis-e-permissoes.md` (que ja tem 2 itens), fi
 4. Tratar violacao de unicidade (`23505`) em `getOuCriaAula` (`src/features/chamada/api.ts:104-126`) refazendo o `select` em vez de propagar o erro cru — mesmo padrao ja usado em `criarAulaParticular`.
 
 Proximo documento, seguindo a ordem combinada: `docs/product/evolucao-vs-desempenho.md`.
+
+## 7. Refinamento de requisitos (2026-09-20): Aula Particular e Aula Teste
+
+Retomada do modulo depois da implementacao das Fases 0-3 (ver `docs/product/arquitetura-tecnica.md`). O usuario trouxe requisitos mais especificos pra UC-03 (Aula Particular) e UC-05 (Aula Teste) do que o que estava documentado — auditoria do codigo atual (2026-09-20) confirmou que **nao sao so lacunas, sao divergencias reais** em relacao ao comportamento implementado.
+
+### 7.1 Estado atual confirmado (antes desta mudanca)
+
+**Aula particular:**
+- `aula_leitura` (`0011_aula_particular.sql:26-30`) libera **qualquer** `eh_equipe()` a ver **todas** as particulares de **todos os professores** — nao ha escopo por professor responsavel.
+- `aula_escrita` (pos `0022`) para `tipo = 'particular'` equivale a `eh_equipe()` puro — qualquer staff cria/edita/exclui qualquer particular, sem checagem de dono da reserva.
+- `nova-particular.tsx:143-144` bloqueia explicitamente `meuPapel === 'aluno'` — autoatendimento nao existe, nem client nem RLS.
+- Nao existe nenhum fluxo de edicao (so `criarAulaParticular` e exclusao) — editar e funcionalidade nova, nao ajuste de permissao.
+
+**Aula teste:**
+- `nova-teste.tsx` usa `Dropdown` alimentado por `getAlunos()` **ja matriculados e ativos** — o oposto do requisito (candidato ainda nao matriculado).
+- `aulas_teste_alunos.aluno_id` (`0018_professor_modulos_e_aula_teste.sql:39-43`) e FK **not null** pra `alunos(id)` — hoje e impossivel cadastrar um candidato sem registro previo em `alunos`.
+- `chamada/[id].tsx` nao tem nenhuma referencia a `aulas_teste` — candidatos nunca aparecem na chamada hoje.
+
+### 7.2 Decisoes registradas (2026-09-20)
+
+| # | Pergunta | Decisao |
+|---|---|---|
+| 1 | Escopo de edicao de aula particular | **So data/hora.** Aluno e professor da reserva permanecem os mesmos — trocar isso exige cancelar e criar de novo |
+| 2 | Reserva self-service do aluno precisa de aprovacao? | **Nao — confirmada na hora**, mesma imediatidade que ja existe quando a equipe cria hoje |
+| 3 | Presenca do candidato de aula teste | **So informativo.** Lista o nome na chamada com o rotulo "Aula Experimental", sem gravar presenca formal — candidato nao matriculado nao tem registro em `alunos`, entao nao ha onde guardar presenca sem redesenho maior (decisao evita esse redesenho) |
+| 4 | Multiplos candidatos por aula teste | **Sim, continua permitindo varios** — so troca a fonte (texto livre em vez de dropdown de matriculados) |
+
+### 7.3 Desenho tecnico — Aula Particular
+
+**RLS de leitura (`aula_leitura`), nova versao para `tipo = 'particular'`:**
+
+```sql
+tipo <> 'particular'
+or papel_atual() = 'dono'
+or aulas.professor_id = auth.uid()
+or exists (select 1 from alunos a where a.id = aulas.aluno_id and a.perfil_id = auth.uid())
+```
+
+Substitui o `eh_equipe()` atual, que hoje deixa qualquer professor ver a particular de qualquer colega.
+
+**RLS de escrita (`aula_escrita`), nova versao para `tipo = 'particular'`:**
+
+- **Insert:** continua liberado pra `eh_equipe()` (qualquer staff agenda pra qualquer aluno/professor, como hoje) **ou** para o proprio aluno reservando pra si (`exists (select 1 from alunos a where a.perfil_id = auth.uid() and a.id = new.aluno_id)`) — condicao de auto-servico segue o mesmo idioma ja usado em `contratos`/`pedidos_presenca`/etc. (checar o vinculo em `alunos`, nao o `papel`), coerente com o achado de `professor-como-aluno.md` de que esse e o padrao correto no restante do schema.
+- **Update/Delete:** `papel_atual() = 'dono') or (eh_equipe() and professor_id = auth.uid()) or exists (select 1 from alunos a where a.perfil_id = auth.uid() and a.id = aluno_id)`.
+
+**Edicao restrita a data/hora:** em vez de `update` direto via PostgREST (que exporia todas as colunas), seguir o padrao ja usado no projeto pra edicoes com escopo restrito (`atualizar_meus_dados_aluno`, `atualizar_meu_perfil`): nova RPC `remarcar_aula_particular(p_aula_id uuid, p_nova_data date, p_nova_hora time)` que valida a permissao (mesma condicao do `update` acima), reaproveita a validacao de conflito/disponibilidade ja usada na criacao (`horarios_livres_particular`) e so entao atualiza `data`/`hora`. Isso torna a restricao "so data/hora" uma garantia de codigo, nao so de UI.
+
+**UI:**
+- `nova-particular.tsx`: remover o bloqueio de `meuPapel === 'aluno'`; quando quem abre e aluno, pre-selecionar `aluno_id` como o proprio `meuAluno.id` (sem dropdown de aluno nesse caso) e manter a escolha de professor/data/hora como hoje.
+- Nova tela ou secao de edicao (ex.: `chamada/editar-particular.tsx` ou modal a partir do detalhe da particular na Agenda): campos de data/hora apenas, chamando `remarcar_aula_particular`.
+- Agenda (`chamada/index.tsx`): a lista de particulares do dia passa a refletir a visibilidade nova automaticamente (RLS ja filtra) — sem mudanca de logica de tela, so o dado que volta muda.
+
+### 7.4 Desenho tecnico — Aula Teste
+
+**Schema:** substituir `aulas_teste_alunos` (FK obrigatoria pra `alunos`) por uma tabela de candidatos com texto livre:
+
+```sql
+create table aulas_teste_candidatos (
+  id            uuid primary key default gen_random_uuid(),
+  aula_teste_id uuid not null references aulas_teste (id) on delete cascade,
+  nome          text not null,
+  telefone      text,
+  criado_em     timestamptz not null default now()
+);
+```
+
+Sem dado de producao em `aulas_teste_alunos` ainda (feature nao foi usada em uso real, banco recem-populado) — pode ser um `drop table` + criacao da nova, sem migracao de dados. RLS espelha a mesma regra ja existente de `aulas_teste` (`sou_responsavel_pela_aula`, staff-only) — nenhum papel de "candidato" acessa isso, ja que candidato nao tem login.
+
+**UI (`nova-teste.tsx`):** trocar o `Dropdown` de alunos matriculados por uma lista de adicionar/remover candidatos (nome + telefone opcional), mesmo padrao de interacao ja usado em `disponibilidade.tsx` para a lista de horarios (adicionar item, remover item, nao busca em cadastro existente).
+
+**Chamada (`chamada/[id].tsx`):** nova secao/consulta — ao abrir a chamada de um slot+data, buscar tambem `aulas_teste` (+ `aulas_teste_candidatos`) para o mesmo `aula_recorrente_id` e `data`, e listar cada candidato com um rotulo "Aula Experimental" junto da lista normal de alunos do modulo. Sem checkbox de presenca pra esses (decisao 3) — so o nome e o rotulo, informativo pro professor saber quem esperar.
+
+### 7.5 Consequencia para o backlog
+
+Dois itens novos, sem bloqueio de fase, junto aos ja registrados em `usuarios-e-convites.md` §7 e `professor-como-aluno.md` §5:
+
+9. **Aula particular — escopo de visibilidade/edicao + autoatendimento do aluno:** RLS de `aula_leitura`/`aula_escrita` revisada (secao 7.3), RPC `remarcar_aula_particular`, ajuste em `nova-particular.tsx`, nova tela/modal de remarcacao.
+10. **Aula teste — candidato nao matriculado:** nova tabela `aulas_teste_candidatos` substituindo `aulas_teste_alunos`, UI de lista livre em `nova-teste.tsx`, secao "Aula Experimental" nova em `chamada/[id].tsx`.

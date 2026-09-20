@@ -12,6 +12,7 @@ const ROTULO_PAPEL: Record<string, string> = {
   dono: 'Dono',
   professor: 'Professor(a)',
   aluno: 'Aluno',
+  responsavel: 'Responsável',
 };
 
 export default function UsuariosIndex() {

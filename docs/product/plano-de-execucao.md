@@ -1,6 +1,8 @@
 # Plano de Execucao
 
-Consolida os 8 itens de backlog gerados pelos 6 documentos de produto em `docs/product/` num sequenciamento unico, priorizado por risco e dependencia. Nenhum item aqui e novo — cada um ja tem decisao de produto fechada e desenho tecnico no documento de origem (linkado em cada secao). Este documento so ordena a execucao; nao substitui os anteriores.
+Consolida os itens de backlog gerados pelos documentos de produto em `docs/product/` num sequenciamento unico, priorizado por risco e dependencia. Nenhum item aqui e novo — cada um ja tem decisao de produto fechada e desenho tecnico no documento de origem (linkado em cada secao). Este documento so ordena a execucao; nao substitui os anteriores.
+
+**Nota de atualizacao:** [arquitetura-tecnica.md](./arquitetura-tecnica.md) reauditou as Fases 0-3 abaixo contra o estado real do repositorio em 2026-09-20 (varias ja foram implementadas e aplicadas em producao, e a Fase 3 teve escopo reduzido — o papel `responsavel` formal deixou de ser necessario porque `0020_auto_vincula_aluno_por_email.sql` ja resolve o mesmo problema por um caminho mais barato). Para status de implementacao, aquele documento e a fonte da verdade; este documento continua valido como registro do sequenciamento e da logica de priorizacao original.
 
 ## 1. Criterios de priorizacao
 
@@ -74,6 +76,9 @@ Ordem interna (ja definida no documento de origem, repetida aqui por completude)
 | Item | Origem | Observacao |
 |---|---|---|
 | Concluir importacao automatica de feriados | [eventos.md](./eventos.md) §5-6 | Totalmente aditivo, nao mexe em nada existente. Pode entrar em paralelo com qualquer fase acima. |
+| Professor com dupla identidade (tambem aluno) | [professor-como-aluno.md](./professor-como-aluno.md) §4 | RLS ja suporta; ajuste e so em 3 pontos do cliente (`AuthProvider`, `QuickMenu`, `minha-evolucao.tsx`) + trava nova de autoavaliacao em `registrar_avaliacao_evolucao`. Nao depende de nenhuma fase acima nem da Fase 4 (migracao Evolucao). |
+| Aula particular — visibilidade/edicao escopada + autoatendimento do aluno | [chamada-agenda-frequencia.md](./chamada-agenda-frequencia.md) §7.3 | RLS de `aula_leitura`/`aula_escrita` revisada, RPC nova `remarcar_aula_particular`, ajuste em `nova-particular.tsx`. Independente das demais fases. |
+| Aula teste — candidato nao matriculado | [chamada-agenda-frequencia.md](./chamada-agenda-frequencia.md) §7.4 | Troca `aulas_teste_alunos` (FK obrigatoria) por `aulas_teste_candidatos` (texto livre); nova secao "Aula Experimental" na chamada. Sem dado de producao a migrar. |
 
 **"Meus convites" para professor** ([usuarios-e-convites.md](./usuarios-e-convites.md) §5-6) ficou **fora deste plano**, por decisao registrada em 2026-09-19: e uma melhoria conhecida, mas sem compromisso de prioridade — so entra numa fase futura se o problema (professor sem visibilidade de convite enviado com erro) comecar a gerar retrabalho real. Nao repetir a pergunta em revisoes futuras deste plano, a menos que o cenario mude.
 

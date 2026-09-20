@@ -81,6 +81,21 @@ Migration `0022_presenca_respeita_meus_modulos.sql`: `aula_escrita` (para `tipo 
 2. **Multiplos filhos por conta (achado 4.3):** registrar como decisao adiada, nao como bloqueador — nem o desenho antigo nem o `0020` resolvem isso; se vier a ser priorizado, a solucao correta e uma tabela de vinculo N:N (`responsaveis_alunos`) em vez de sobrecarregar `alunos.perfil_id`, o que tambem tornaria o enum `responsavel` desnecessario (a distincao vira "tem `alunos` vinculados" em vez de um papel proprio).
 3. O enum `papel` **so** precisa ganhar `'responsavel'` se a escola tiver uma necessidade concreta de tratar responsavel e aluno-adolescente-autocadastrado com permissoes diferentes no futuro — hoje nenhum dos 6 documentos registra essa necessidade (a propria decisao original dizia "acesso a features permanece identico ao que aluno ja tem"). Sem diferenca de permissao a exercer, o enum novo so adiciona RLS para manter sem beneficio funcional. Fica fora do escopo priorizado.
 
+### 3.1 Retomada (2026-09-20): item 3 revertido — usuario pediu o enum de volta, mas com desenho bem mais leve
+
+O usuario pediu diretamente: quando o vinculo conta-aluno acontece pelo e-mail do responsavel (`0020`), a conta deve nascer com papel `responsavel`, nao `aluno` — identidade correta na tela de usuarios, nao so acesso equivalente. **Fechado em 2026-09-20**, migrations `0029_papel_responsavel.sql` (so o `alter type papel add value`, numa migration propria porque Postgres nao deixa usar um valor de enum novo na mesma transacao em que foi criado) e `0030_papel_responsavel_no_vinculo.sql`.
+
+**Achado que simplificou tudo:** ao auditar as RLS antes de mexer, confirmei que **nenhuma policy de self-service testa `papel_atual() = 'aluno'` diretamente** — todas testam o vinculo (`exists (select 1 from alunos a where a.id = X and a.perfil_id = auth.uid())`). Isso significa que a premissa do item 3 original ("RLS de ~6-8 tabelas" pra mudar) estava errada — **zero migrations de RLS foram necessarias**. `responsavel` ja tem, de graca, o mesmo acesso que `aluno` sempre teve, so por causa de como a RLS foi desenhada desde `0001`.
+
+O que de fato mudou:
+- `vincula_aluno_por_email()` e `vincula_perfil_por_email_no_aluno()` (0020) passam a fazer `update perfis set papel = 'responsavel' where id = ... and papel = 'aluno'` apos o vinculo — guarda `and papel = 'aluno'` pra nunca rebaixar uma conta que ja e `dono`/`professor` por coincidencia de e-mail.
+- `convidar-aluno` (Edge Function) ganhou o mesmo ajuste, por consistencia — e a mesma acao (vincular conta a aluno), so por convite direto em vez de auto-match.
+- Todo `meuPapel === 'aluno'`/`meuPapel !== 'aluno'` no client (19 pontos, incluindo `AuthProvider.tsx` que carrega `meuAluno`) virou `... || meuPapel === 'responsavel'` / `... && meuPapel !== 'responsavel'` — mecanico, mesmo padrao em todo lugar.
+- `PAPEIS_VALIDOS` (Edge Function `convidar-usuario`) e os seletores de papel em `usuarios/novo.tsx`/`usuarios/[id].tsx`/`usuarios/index.tsx` ganharam a opcao "Responsável" — item que ja estava registrado como dependencia em `usuarios-e-convites.md` §4.3, so nunca tinha sido feito por o enum nao existir ainda.
+- **Nao alterado, deliberadamente:** o vinculo manual (`vincularPerfil`, telas de "candidatos nao vinculados") continua sem setar `papel = 'responsavel'` — esse caminho e client-side puro (sem Edge Function), e so `dono` tem RLS pra mudar `papel` de outro perfil diretamente; fazer isso direito precisaria de uma RPC nova, fora do que foi pedido. Fica registrado como proximo passo se o caso aparecer na pratica.
+
+Verificado: `tsc` limpo, suite completa verde (146 testes, incluindo 2 novos em `AuthProvider.test.tsx` cobrindo carregamento de `meuAluno` para `responsavel`), bundle do Metro compilado sem erro.
+
 Isso substitui os passos 2, 3, 5 e 6 do desenho original de `alunos-e-responsaveis.md` §5.1 (RLS `in ('aluno','responsavel')`, `AuthProvider`, remocao do fluxo de candidatos, `PAPEIS_VALIDOS`) — nenhum deles e mais necessario se o enum nao muda. Os passos 1 e 4 (que criavam o papel e reescreviam o signup) ficam reduzidos so a persistencia de consentimento, sem o enum novo.
 
 ## 4. Plano tecnico por fase (revisao de `plano-de-execucao.md` a luz das secoes 1-3)
