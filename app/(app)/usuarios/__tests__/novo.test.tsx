@@ -28,13 +28,13 @@ describe('NovoUsuario', () => {
   beforeEach(() => {
     mockBack.mockReset();
     mockUseAuth.mockReset();
-    mockUseAuth.mockReturnValue({ meuPapel: 'dono' });
+    mockUseAuth.mockReturnValue({ meuPapel: 'dono', meusAlunos: [] });
     mockConvidarUsuario.mockReset();
     mockConvidarUsuario.mockResolvedValue({ ok: true, perfil_id: 'novo-id' });
   });
 
   it('redirects away when the signed-in user is a student', async () => {
-    mockUseAuth.mockReturnValue({ meuPapel: 'aluno' });
+    mockUseAuth.mockReturnValue({ meuPapel: 'aluno', meusAlunos: [] });
 
     await render(<NovoUsuario />);
 
@@ -42,7 +42,7 @@ describe('NovoUsuario', () => {
   });
 
   it('lets a teacher access the screen but hides the owner role option', async () => {
-    mockUseAuth.mockReturnValue({ meuPapel: 'professor' });
+    mockUseAuth.mockReturnValue({ meuPapel: 'professor', meusAlunos: [] });
 
     await render(<NovoUsuario />);
 

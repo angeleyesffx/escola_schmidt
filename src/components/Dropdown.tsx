@@ -102,6 +102,8 @@ export function Dropdown(props: Props) {
                     testID={testID ? `${testID}-opcao-${opcao.value}` : undefined}
                     style={[styles.opcao, ativo && styles.opcaoAtiva]}
                     onPress={() => escolher(opcao.value)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: ativo }}
                   >
                     <View style={styles.opcaoTextos}>
                       <Text style={[type.body, ativo && styles.opcaoTextoAtivo]}>{opcao.label}</Text>

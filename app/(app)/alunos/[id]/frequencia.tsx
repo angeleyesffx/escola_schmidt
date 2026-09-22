@@ -24,7 +24,13 @@ const COR_STATUS: Record<RegistroFrequencia['status'], 'present' | 'justified' |
 export default function FrequenciaAluno() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { meuPapel, meuAluno } = useAuth();
+  const { meuPapel, meusAlunos, meusAlunosCarregado } = useAuth();
+  const souAlunoOuResponsavel = meuPapel === 'aluno' || meuPapel === 'responsavel';
+  // Um responsável pode ter vários alunos vinculados — o acesso self-service
+  // é por vínculo com ESTE id específico da URL, não "sou aluno/responsavel"
+  // sozinho (senão daria pra ver a frequência de um filho de outra família
+  // só trocando o id).
+  const meuVinculoComEsteAluno = meusAlunos.some((a) => a.id === id);
 
   const { data, loading, error } = useAsyncData(
     async () => {
@@ -32,20 +38,34 @@ export default function FrequenciaAluno() {
       return { aluno: dadosAluno, registros: dadosFrequencia };
     },
     [id],
-    { onFocus: true, mensagemErro: 'Erro ao carregar frequência. Tente novamente.' }
+    { onFocus: true, mensagemErro: 'Erro ao carregar frequência. Tente novamente.', enabled: !souAlunoOuResponsavel || meuVinculoComEsteAluno }
   );
   const aluno = data?.aluno ?? null;
   const registros = data?.registros ?? [];
 
-  if (meuPapel === 'aluno' || meuPapel === 'responsavel') {
-    if (!meuAluno) {
+  if (souAlunoOuResponsavel && !meusAlunosCarregado) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (souAlunoOuResponsavel) {
+    if (meusAlunos.length === 0) {
       return (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
+        <>
+          <PageHeader titulo="Frequência" />
+          <View style={styles.center}>
+            <Text style={[type.body, styles.subtitle]}>
+              Seu cadastro ainda não foi vinculado a um aluno. Fale com a escola.
+            </Text>
+          </View>
+          <Footer />
+        </>
       );
     }
-    if (meuAluno.id !== id) {
+    if (!meuVinculoComEsteAluno) {
       return <Redirect href="/" />;
     }
   }

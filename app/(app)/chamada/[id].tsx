@@ -1,6 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, FlatList, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import {
   ConflitoPresencaError,
@@ -24,7 +24,14 @@ import {
   type StatusPresenca,
 } from '../../../src/features/chamada/api';
 import { exportarChamada, type FormatoExportacao } from '../../../src/features/chamada/export';
-import { useAuth } from '../../../src/features/auth/AuthProvider';
+import { presencasParaRegistro, type RegistroLocal } from '../../../src/features/chamada/selectors';
+import { AutocheckinAluno } from '../../../src/features/chamada/components/AutocheckinAluno';
+import { CandidatosTesteSecao } from '../../../src/features/chamada/components/CandidatosTesteSecao';
+import { LegendaPresenca } from '../../../src/features/chamada/components/LegendaPresenca';
+import { ListaAlunosChamada } from '../../../src/features/chamada/components/ListaAlunosChamada';
+import { ModalExportacao } from '../../../src/features/chamada/components/ModalExportacao';
+import { PedidosPendentesSecao } from '../../../src/features/chamada/components/PedidosPendentesSecao';
+import { useAuth, type MeuAluno } from '../../../src/features/auth/AuthProvider';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
@@ -43,25 +50,12 @@ function dataValidaOuHoje(data?: string) {
   return hojeISO();
 }
 
-const ESTADOS: {
-  status: StatusPresenca;
-  label: string;
-  legenda: string;
-  cor: 'present' | 'justified' | 'absent';
-}[] = [
-  { status: 'presente', label: '✓', legenda: 'Presente', cor: 'present' },
-  { status: 'falta_justificada', label: 'J', legenda: 'Falta justificada', cor: 'justified' },
-  { status: 'falta', label: '✕', legenda: 'Falta', cor: 'absent' },
-];
-
 export default function ChamadaDetalhe() {
   const { id, data } = useLocalSearchParams<{ id: string; data?: string }>();
   const router = useRouter();
-  const { session, meuPapel, meuAluno } = useAuth();
+  const { session, meuPapel, meusAlunos } = useAuth();
   const souAluno = (meuPapel === 'aluno' || meuPapel === 'responsavel');
   const dataSelecionada = dataValidaOuHoje(data);
-
-  type RegistroLocal = { status: StatusPresenca; registradoEm: string | null };
 
   const [alunos, setAlunos] = useState<Aluno[]>([]);
   const [presencas, setPresencas] = useState<Record<string, RegistroLocal>>({});
@@ -76,7 +70,16 @@ export default function ChamadaDetalhe() {
   const [alunosSalvando, setAlunosSalvando] = useState<Set<string>>(new Set());
 
   // Pedido de presença: só existe pra aluno, só no dia da própria aula, do
-  // próprio módulo — e só vira presença de fato quando a equipe aprova.
+  // próprio módulo — e só vira presença de fato quando a equipe aprova. Mais
+  // de um filho vinculado pode cair no módulo elegível pra essa aula (ex.:
+  // gêmeos) — AutocheckinAluno só mostra o seletor quando isso acontece.
+  const [alunosElegiveis, setAlunosElegiveis] = useState<MeuAluno[]>([]);
+  const [alunoSelecionadoId, setAlunoSelecionadoId] = useState<string | null>(null);
+  // Preferência lida de dentro de carregar() sem entrar nas deps do
+  // useCallback — se fosse state, corrigir a seleção depois de um reload
+  // recriava carregar() e disparava o useFocusEffect de novo, rodando a
+  // carga inteira duas vezes a cada foco.
+  const alunoPreferidoRef = useRef<string | null>(null);
   const [elegivelAutocheckin, setElegivelAutocheckin] = useState(false);
   const [minhaPresenca, setMinhaPresenca] = useState<RegistroLocal | null>(null);
   const [meuPedido, setMeuPedido] = useState<PedidoPresenca | null>(null);
@@ -100,16 +103,22 @@ export default function ChamadaDetalhe() {
       setHorario(recorrente.hora.slice(0, 5));
 
       if (souAluno) {
-        const elegivel = dataSelecionada === hojeISO() && recorrente.modulos.includes(meuAluno?.modulo ?? -1);
+        const elegiveis = meusAlunos.filter((a) => recorrente.modulos.includes(a.modulo));
+        setAlunosElegiveis(elegiveis);
+        const aluno =
+          elegiveis.find((a) => a.id === alunoPreferidoRef.current) ?? elegiveis[0] ?? null;
+        alunoPreferidoRef.current = aluno?.id ?? null;
+        setAlunoSelecionadoId(aluno?.id ?? null);
+        const elegivel = dataSelecionada === hojeISO() && aluno !== null;
         setElegivelAutocheckin(elegivel);
-        if (!meuAluno) {
+        if (!aluno) {
           setAulaId(null);
           setMinhaPresenca(null);
           setMeuPedido(null);
           setProfessoresDoModulo([]);
           return;
         }
-        setProfessoresDoModulo(await getProfessoresDoModulo(recorrente.id, meuAluno.modulo));
+        setProfessoresDoModulo(await getProfessoresDoModulo(recorrente.id, aluno.modulo));
         if (!elegivel) {
           setAulaId(null);
           setMinhaPresenca(null);
@@ -117,9 +126,9 @@ export default function ChamadaDetalhe() {
           return;
         }
         const aula = await getOuCriaAula(recorrente.id, dataSelecionada, recorrente.hora, session?.user.id ?? null);
-        const [listaPresencas, pedido] = await Promise.all([getPresencas(aula), getMeuPedido(aula, meuAluno.id)]);
+        const [listaPresencas, pedido] = await Promise.all([getPresencas(aula), getMeuPedido(aula, aluno.id)]);
         setAulaId(aula);
-        const minha = listaPresencas.find((p) => p.aluno_id === meuAluno.id);
+        const minha = listaPresencas.find((p) => p.aluno_id === aluno.id);
         setMinhaPresenca(minha ? { status: minha.status, registradoEm: minha.registrado_em } : null);
         setMeuPedido(pedido);
         return;
@@ -135,11 +144,7 @@ export default function ChamadaDetalhe() {
       setAulaId(aula);
       setAlunos(listaAlunos);
       setCandidatosTeste(listaCandidatos);
-      setPresencas(
-        Object.fromEntries(
-          listaPresencas.map((p) => [p.aluno_id, { status: p.status, registradoEm: p.registrado_em }])
-        )
-      );
+      setPresencas(presencasParaRegistro(listaPresencas));
       setPedidosPendentes(pendentes);
     } catch (err) {
       console.error(err);
@@ -147,7 +152,7 @@ export default function ChamadaDetalhe() {
     } finally {
       setLoading(false);
     }
-  }, [dataSelecionada, id, session?.user.id, souAluno, meuAluno]);
+  }, [dataSelecionada, id, session?.user.id, souAluno, meusAlunos]);
 
   useFocusEffect(
     useCallback(() => {
@@ -155,47 +160,50 @@ export default function ChamadaDetalhe() {
     }, [carregar])
   );
 
-  async function marcar(alunoId: string, status: StatusPresenca) {
-    // Ignora toque em cima de um salvamento ainda em voo pro mesmo aluno —
-    // é exatamente essa sobreposição (corrigir rápido um clique errado) que
-    // fazia o SELECT-then-UPSERT de marcarPresenca enxergar versão trocada
-    // e disparar ConflitoPresencaError sem ninguém mais ter mexido na chamada.
-    if (!aulaId || alunosSalvando.has(alunoId)) return;
-    const anterior = presencas[alunoId];
-    setAlunosSalvando((atual) => new Set(atual).add(alunoId));
-    setPresencas((atual) => ({ ...atual, [alunoId]: { status, registradoEm: anterior?.registradoEm ?? null } }));
-    try {
-      const registradoEm = await marcarPresenca(
-        aulaId,
-        alunoId,
-        status,
-        session?.user.id ?? null,
-        anterior?.registradoEm ?? null
-      );
-      setPresencas((atual) => ({ ...atual, [alunoId]: { status, registradoEm } }));
-    } catch (err) {
-      setPresencas((atual) => ({ ...atual, [alunoId]: anterior }));
-      if (err instanceof ConflitoPresencaError) {
-        setConflitoAlunoId(alunoId);
-      } else {
-        console.error(err);
-        setError('Erro ao salvar presença. Tente novamente.');
+  const marcar = useCallback(
+    async (alunoId: string, status: StatusPresenca) => {
+      // Ignora toque em cima de um salvamento ainda em voo pro mesmo aluno —
+      // é exatamente essa sobreposição (corrigir rápido um clique errado) que
+      // fazia o SELECT-then-UPSERT de marcarPresenca enxergar versão trocada
+      // e disparar ConflitoPresencaError sem ninguém mais ter mexido na chamada.
+      if (!aulaId || alunosSalvando.has(alunoId)) return;
+      const anterior = presencas[alunoId];
+      setAlunosSalvando((atual) => new Set(atual).add(alunoId));
+      setPresencas((atual) => ({ ...atual, [alunoId]: { status, registradoEm: anterior?.registradoEm ?? null } }));
+      try {
+        const registradoEm = await marcarPresenca(
+          aulaId,
+          alunoId,
+          status,
+          session?.user.id ?? null,
+          anterior?.registradoEm ?? null
+        );
+        setPresencas((atual) => ({ ...atual, [alunoId]: { status, registradoEm } }));
+      } catch (err) {
+        setPresencas((atual) => ({ ...atual, [alunoId]: anterior }));
+        if (err instanceof ConflitoPresencaError) {
+          setConflitoAlunoId(alunoId);
+        } else {
+          console.error(err);
+          setError('Erro ao salvar presença. Tente novamente.');
+        }
+      } finally {
+        setAlunosSalvando((atual) => {
+          const novo = new Set(atual);
+          novo.delete(alunoId);
+          return novo;
+        });
       }
-    } finally {
-      setAlunosSalvando((atual) => {
-        const novo = new Set(atual);
-        novo.delete(alunoId);
-        return novo;
-      });
-    }
-  }
+    },
+    [aulaId, presencas, alunosSalvando, session?.user.id]
+  );
 
-  async function enviarPedido() {
-    if (!aulaId || !meuAluno) return;
+  const enviarPedido = useCallback(async () => {
+    if (!aulaId || !alunoSelecionadoId) return;
     setEnviandoPedido(true);
     setError(null);
     try {
-      const pedido = await pedirPresenca(aulaId, meuAluno.id);
+      const pedido = await pedirPresenca(aulaId, alunoSelecionadoId);
       setMeuPedido(pedido);
     } catch (err) {
       console.error(err);
@@ -203,41 +211,47 @@ export default function ChamadaDetalhe() {
     } finally {
       setEnviandoPedido(false);
     }
-  }
+  }, [aulaId, alunoSelecionadoId]);
 
-  async function aprovar(pedido: PedidoPendente) {
-    setProcessandoPedido(pedido.id);
-    setError(null);
-    try {
-      await aprovarPedido(pedido, session?.user.id ?? null);
-      setPresencas((atual) => ({
-        ...atual,
-        [pedido.aluno_id]: { status: 'presente', registradoEm: new Date().toISOString() },
-      }));
-      setPedidosPendentes((atual) => atual.filter((p) => p.id !== pedido.id));
-    } catch (err) {
-      console.error(err);
-      setError('Erro ao aprovar pedido. Tente novamente.');
-    } finally {
-      setProcessandoPedido(null);
-    }
-  }
+  const aprovar = useCallback(
+    async (pedido: PedidoPendente) => {
+      setProcessandoPedido(pedido.id);
+      setError(null);
+      try {
+        await aprovarPedido(pedido, session?.user.id ?? null);
+        setPresencas((atual) => ({
+          ...atual,
+          [pedido.aluno_id]: { status: 'presente', registradoEm: new Date().toISOString() },
+        }));
+        setPedidosPendentes((atual) => atual.filter((p) => p.id !== pedido.id));
+      } catch (err) {
+        console.error(err);
+        setError('Erro ao aprovar pedido. Tente novamente.');
+      } finally {
+        setProcessandoPedido(null);
+      }
+    },
+    [session?.user.id]
+  );
 
-  async function exportar(formato: FormatoExportacao) {
-    setMenuExportacao(false);
-    setExportando(formato);
-    setErroExportacao(null);
-    try {
-      await exportarChamada({ alunos, presencas, data: dataSelecionada, horario, formato });
-    } catch (err) {
-      console.error(err);
-      setErroExportacao('Erro ao exportar a chamada. Tente novamente.');
-    } finally {
-      setExportando(null);
-    }
-  }
+  const exportar = useCallback(
+    async (formato: FormatoExportacao) => {
+      setMenuExportacao(false);
+      setExportando(formato);
+      setErroExportacao(null);
+      try {
+        await exportarChamada({ alunos, presencas, data: dataSelecionada, horario, formato });
+      } catch (err) {
+        console.error(err);
+        setErroExportacao('Erro ao exportar a chamada. Tente novamente.');
+      } finally {
+        setExportando(null);
+      }
+    },
+    [alunos, presencas, dataSelecionada, horario]
+  );
 
-  async function recusar(pedido: PedidoPendente) {
+  const recusar = useCallback(async (pedido: PedidoPendente) => {
     setProcessandoPedido(pedido.id);
     setError(null);
     try {
@@ -249,7 +263,21 @@ export default function ChamadaDetalhe() {
     } finally {
       setProcessandoPedido(null);
     }
-  }
+  }, []);
+
+  const abrirFrequencia = useCallback(
+    (alunoId: string) => router.push(`/alunos/${alunoId}/frequencia`),
+    [router]
+  );
+
+  const selecionarAluno = useCallback(
+    (alunoId: string) => {
+      alunoPreferidoRef.current = alunoId;
+      setAlunoSelecionadoId(alunoId);
+      carregar();
+    },
+    [carregar]
+  );
 
   if (loading) {
     return (
@@ -264,60 +292,20 @@ export default function ChamadaDetalhe() {
 
   if (souAluno) {
     return (
-      <>
-        <PageHeader titulo={`Chamada ${horario ?? ''}`} />
-        <View style={styles.container}>
-          <Text style={[type.body, styles.subtitle]}>{dataSelecionada}</Text>
-          {professoresDoModulo.length > 0 ? (
-            <Text style={[type.body, styles.subtitle]}>
-              {professoresDoModulo.length === 1 ? 'Professor(a): ' : 'Professores: '}
-              {professoresDoModulo.map((p) => p.nome).join(', ')}
-            </Text>
-          ) : null}
-
-          {error ? (
-            <Text testID="chamada-detalhe-erro" style={[type.body, styles.error]}>
-              {error}
-            </Text>
-          ) : null}
-
-          {!elegivelAutocheckin ? (
-            <Text style={[type.body, styles.subtitle, styles.autocheckinAviso]}>
-              Você só pode pedir presença no dia e no horário da sua própria aula.
-            </Text>
-          ) : minhaPresenca ? (
-            <View style={styles.autocheckinCard}>
-              <Text style={[type.subtitle, { color: colors.present }]}>✓ Presença confirmada</Text>
-              {minhaPresenca.registradoEm ? (
-                <Text style={[type.caption, styles.subtitle]}>
-                  Registrada às {new Date(minhaPresenca.registradoEm).toLocaleTimeString('pt-BR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </Text>
-              ) : null}
-            </View>
-          ) : meuPedido?.status === 'pendente' ? (
-            <View style={styles.autocheckinCardPendente}>
-              <Text style={[type.subtitle, { color: colors.justified }]}>⏳ Pedido enviado</Text>
-              <Text style={[type.caption, styles.subtitle]}>Aguardando aprovação do professor.</Text>
-            </View>
-          ) : (
-            <TouchableOpacity
-              testID="chamada-detalhe-autocheckin-pedir"
-              style={[styles.confirmarBotao, enviandoPedido && styles.botaoDesabilitado]}
-              onPress={enviarPedido}
-              disabled={enviandoPedido}
-            >
-              {enviandoPedido ? (
-                <ActivityIndicator color={colors.onPrimary} />
-              ) : (
-                <Text style={styles.confirmarBotaoTexto}>Pedir presença</Text>
-              )}
-            </TouchableOpacity>
-          )}
-        </View>
-      </>
+      <AutocheckinAluno
+        horario={horario}
+        dataSelecionada={dataSelecionada}
+        professoresDoModulo={professoresDoModulo}
+        error={error}
+        elegivelAutocheckin={elegivelAutocheckin}
+        minhaPresenca={minhaPresenca}
+        meuPedido={meuPedido}
+        enviandoPedido={enviandoPedido}
+        onPedirPresenca={enviarPedido}
+        alunosElegiveis={alunosElegiveis}
+        alunoSelecionadoId={alunoSelecionadoId}
+        onSelecionarAluno={selecionarAluno}
+      />
     );
   }
 
@@ -347,53 +335,13 @@ export default function ChamadaDetalhe() {
         </Text>
       ) : null}
 
-      <Modal
-        visible={menuExportacao}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setMenuExportacao(false)}
-      >
-        <View style={styles.exportarOverlay}>
-          <TouchableOpacity
-            style={StyleSheet.absoluteFill}
-            activeOpacity={1}
-            onPress={() => setMenuExportacao(false)}
-          />
-          <View style={styles.exportarCard}>
-            <Text style={[type.label, styles.secao]}>Exportar chamada</Text>
-            <TouchableOpacity
-              testID="chamada-detalhe-exportar-xlsx"
-              style={styles.exportarOpcao}
-              onPress={() => exportar('xlsx')}
-            >
-              <Text style={styles.exportarOpcaoTexto}>Excel (.xlsx)</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID="chamada-detalhe-exportar-csv"
-              style={styles.exportarOpcao}
-              onPress={() => exportar('csv')}
-            >
-              <Text style={styles.exportarOpcaoTexto}>CSV (Planilhas Google)</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID="chamada-detalhe-exportar-cancelar"
-              style={styles.exportarCancelar}
-              onPress={() => setMenuExportacao(false)}
-            >
-              <Text style={styles.exportarCancelarTexto}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      <ModalExportacao
+        visivel={menuExportacao}
+        onExportar={exportar}
+        onFechar={() => setMenuExportacao(false)}
+      />
 
-      <View style={styles.legenda}>
-        {ESTADOS.map((estado) => (
-          <View key={estado.status} style={styles.legendaItem}>
-            <View style={[styles.legendaCor, { backgroundColor: colors[estado.cor] }]} />
-            <Text style={[type.caption, styles.legendaTexto]}>{estado.legenda}</Text>
-          </View>
-        ))}
-      </View>
+      <LegendaPresenca />
 
       {error ? (
         <Text testID="chamada-detalhe-erro" style={[type.body, styles.error]}>
@@ -412,112 +360,22 @@ export default function ChamadaDetalhe() {
         </View>
       ) : null}
 
-      {pedidosPendentes.length > 0 ? (
-        <View style={styles.pedidosSecao}>
-          <Text style={[type.label, styles.secao]}>Pedidos de presença</Text>
-          {pedidosPendentes.map((pedido) => {
-            const processando = processandoPedido === pedido.id;
-            return (
-              <View key={pedido.id} style={styles.pedidoRow}>
-                <Text style={[type.body, styles.pedidoNome]} numberOfLines={1}>
-                  {pedido.aluno_nome}
-                </Text>
-                <View style={styles.pedidoBotoes}>
-                  <TouchableOpacity
-                    testID={`chamada-detalhe-pedido-recusar-${pedido.id}`}
-                    style={[styles.pedidoBotaoRecusar, processando && styles.botaoDesabilitado]}
-                    onPress={() => recusar(pedido)}
-                    disabled={processando}
-                  >
-                    <Text style={styles.pedidoBotaoRecusarTexto}>Recusar</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    testID={`chamada-detalhe-pedido-aprovar-${pedido.id}`}
-                    style={[styles.pedidoBotaoAprovar, processando && styles.botaoDesabilitado]}
-                    onPress={() => aprovar(pedido)}
-                    disabled={processando}
-                  >
-                    {processando ? (
-                      <ActivityIndicator color={colors.onPrimary} />
-                    ) : (
-                      <Text style={styles.pedidoBotaoAprovarTexto}>Aprovar</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      ) : null}
+      <PedidosPendentesSecao
+        pedidos={pedidosPendentes}
+        processandoPedidoId={processandoPedido}
+        onAprovar={aprovar}
+        onRecusar={recusar}
+      />
 
-      {candidatosTeste.length > 0 ? (
-        <View style={styles.pedidosSecao}>
-          <Text style={[type.label, styles.secao]}>Aula Experimental</Text>
-          <Text style={[type.caption, styles.subtitle]}>
-            Candidatos ainda não matriculados — só informativo, sem controle de presença.
-          </Text>
-          {candidatosTeste.map((candidato) => (
-            <View key={candidato.id} testID={`chamada-detalhe-candidato-${candidato.id}`} style={styles.row}>
-              <View style={styles.nomeArea}>
-                <Text style={[type.body, styles.nome]} numberOfLines={1}>
-                  {candidato.nome}
-                </Text>
-                <Text style={[type.caption, styles.moduloTexto]}>
-                  Aula Experimental{candidato.telefone ? ` · ${candidato.telefone}` : ''}
-                </Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      ) : null}
+      <CandidatosTesteSecao candidatos={candidatosTeste} />
 
-      <FlatList
-        data={alunos}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          <Text style={[type.body, styles.subtitle]}>Nenhum aluno ativo nesse módulo.</Text>
-        }
-        renderItem={({ item }) => {
-          const status = presencas[item.id]?.status;
-          return (
-            <View testID={`chamada-detalhe-aluno-row-${item.id}`} style={styles.row}>
-              <TouchableOpacity
-                testID={`chamada-detalhe-aluno-nome-${item.id}`}
-                style={styles.nomeArea}
-                onPress={() => router.push(`/alunos/${item.id}/frequencia`)}
-              >
-                <Text style={[type.body, styles.nome]} numberOfLines={1}>
-                  {item.nome}
-                </Text>
-                <Text style={[type.caption, styles.moduloTexto]}>Módulo {item.modulo}</Text>
-              </TouchableOpacity>
-              <View style={styles.botoes}>
-                {ESTADOS.map((estado) => {
-                  const ativo = status === estado.status;
-                  // Só trava a linha do próprio aluno (conflito real ou salvamento em
-                  // voo) — o resto da chamada continua editável normalmente.
-                  const bloqueado = conflitoAlunoId === item.id || alunosSalvando.has(item.id);
-                  return (
-                    <TouchableOpacity
-                      key={estado.status}
-                      testID={`chamada-detalhe-status-button-${item.id}-${estado.status}`}
-                      style={[
-                        styles.botao,
-                        { backgroundColor: ativo ? colors[estado.cor] : colors.pending },
-                        bloqueado && styles.botaoDesabilitado,
-                      ]}
-                      onPress={() => marcar(item.id, estado.status)}
-                      disabled={bloqueado}
-                    >
-                      <Text style={styles.botaoTexto}>{estado.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          );
-        }}
+      <ListaAlunosChamada
+        alunos={alunos}
+        presencas={presencas}
+        conflitoAlunoId={conflitoAlunoId}
+        alunosSalvando={alunosSalvando}
+        onAbrirFrequencia={abrirFrequencia}
+        onMarcar={marcar}
       />
       </View>
       <Footer />
@@ -565,64 +423,6 @@ const styles = StyleSheet.create({
     fontFamily: type.subtitle.fontFamily,
     fontSize: type.subtitle.fontSize,
   },
-  exportarOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.lg,
-  },
-  exportarCard: {
-    width: '100%',
-    maxWidth: 360,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    gap: spacing.sm,
-  },
-  exportarOpcao: {
-    minHeight: touchTarget,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    justifyContent: 'center',
-  },
-  exportarOpcaoTexto: {
-    color: colors.primary,
-    fontFamily: type.subtitle.fontFamily,
-    fontSize: type.subtitle.fontSize,
-  },
-  exportarCancelar: {
-    minHeight: touchTarget - 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: spacing.xs,
-  },
-  exportarCancelarTexto: {
-    color: colors.textMuted,
-    fontFamily: type.body.fontFamily,
-    fontSize: type.body.fontSize,
-  },
-  legenda: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-    marginTop: spacing.sm,
-  },
-  legendaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  legendaCor: {
-    width: 12,
-    height: 12,
-    borderRadius: radius.sm,
-  },
-  legendaTexto: {
-    color: colors.textMuted,
-  },
   error: {
     color: colors.danger,
     marginTop: spacing.xs,
@@ -655,138 +455,5 @@ const styles = StyleSheet.create({
   },
   botaoDesabilitado: {
     opacity: 0.5,
-  },
-  autocheckinAviso: {
-    marginTop: spacing.xl,
-  },
-  autocheckinCard: {
-    marginTop: spacing.xl,
-    borderRadius: radius.lg,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.present,
-    padding: spacing.lg,
-  },
-  autocheckinCardPendente: {
-    marginTop: spacing.xl,
-    borderRadius: radius.lg,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.justified,
-    padding: spacing.lg,
-  },
-  pedidosSecao: {
-    marginTop: spacing.lg,
-    gap: spacing.sm,
-  },
-  secao: {
-    color: colors.textMuted,
-    marginBottom: spacing.xs,
-  },
-  pedidoRow: {
-    minHeight: touchTarget,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surfaceTint,
-    borderWidth: 1,
-    borderColor: colors.justified,
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  pedidoNome: {
-    flex: 1,
-    marginRight: spacing.sm,
-  },
-  pedidoBotoes: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  pedidoBotaoRecusar: {
-    minHeight: touchTarget - 12,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pedidoBotaoRecusarTexto: {
-    color: colors.danger,
-    fontFamily: type.subtitle.fontFamily,
-    fontSize: type.subtitle.fontSize,
-  },
-  pedidoBotaoAprovar: {
-    minWidth: touchTarget,
-    minHeight: touchTarget - 12,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    backgroundColor: colors.present,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pedidoBotaoAprovarTexto: {
-    color: colors.onPrimary,
-    fontFamily: type.subtitle.fontFamily,
-    fontSize: type.subtitle.fontSize,
-  },
-  confirmarBotao: {
-    height: touchTarget,
-    marginTop: spacing.xl,
-    borderRadius: radius.md,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  confirmarBotaoTexto: {
-    color: colors.onPrimary,
-    fontFamily: type.subtitle.fontFamily,
-    fontSize: type.subtitle.fontSize,
-  },
-  list: {
-    marginTop: spacing.lg,
-    gap: spacing.sm,
-    paddingBottom: spacing.xl,
-  },
-  row: {
-    minHeight: touchTarget,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.md,
-  },
-  nomeArea: {
-    flex: 1,
-    minHeight: touchTarget,
-    justifyContent: 'center',
-    marginRight: spacing.sm,
-  },
-  nome: {
-    color: colors.primary,
-  },
-  moduloTexto: {
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-  botoes: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  botao: {
-    width: touchTarget,
-    height: touchTarget,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  botaoTexto: {
-    color: colors.onPrimary,
-    fontFamily: type.subtitle.fontFamily,
-    fontSize: type.subtitle.fontSize,
   },
 });

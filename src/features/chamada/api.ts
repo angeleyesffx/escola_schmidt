@@ -133,6 +133,73 @@ export async function excluirSlotGrade(id: string) {
   if (error) throw error;
 }
 
+// ---------------------------------------------------------------------------
+// Catálogo de módulos (dono-only) — supabase/migrations/0040. Chave é o
+// mesmo smallint que alunos.modulo/professores_aula.modulo/aulas_recorrentes.
+// modulos já usavam antes do catálogo existir — RLS de leitura é aberta pra
+// qualquer autenticado (mesmo padrão de tipos_evento, 0003), escrita é
+// dono-only, refletindo que módulo é decisão estrutural da grade (mesma
+// trava de configuracoes/grade-semanal.tsx).
+// ---------------------------------------------------------------------------
+
+export type Modulo = { numero: number; nome: string; ativo: boolean };
+
+export async function getModulos() {
+  const { data, error } = await supabase.from('modulos').select('numero, nome, ativo').order('numero');
+  if (error) throw error;
+  return data as Modulo[];
+}
+
+export async function getModulosAtivos() {
+  const { data, error } = await supabase
+    .from('modulos')
+    .select('numero, nome, ativo')
+    .eq('ativo', true)
+    .order('numero');
+  if (error) throw error;
+  return data as Modulo[];
+}
+
+// numero é calculado aqui (max + 1), não recebido do client — ao contrário
+// de tipos_evento.ordem (só ordenação, colisão é inofensiva), numero é a
+// própria chave primária/FK de modulos: uma colisão vira erro de insert.
+export async function criarModulo(nome: string) {
+  const { data: atuais, error: erroAtuais } = await supabase
+    .from('modulos')
+    .select('numero')
+    .order('numero', { ascending: false })
+    .limit(1);
+  if (erroAtuais) throw erroAtuais;
+
+  const proximoNumero = (atuais?.[0]?.numero ?? 0) + 1;
+  const { error } = await supabase.from('modulos').insert({ numero: proximoNumero, nome });
+  if (error) throw error;
+  return proximoNumero;
+}
+
+export async function atualizarModulo(numero: number, campos: Partial<{ nome: string; ativo: boolean }>) {
+  const { error } = await supabase.from('modulos').update(campos).eq('numero', numero);
+  if (error) throw error;
+}
+
+// Mesmo raciocínio de getUsoSlotGrade: só oferece excluir quando não há
+// nenhum vínculo — alunos matriculados nesse módulo, ou horário de grade que
+// o inclua. Fora isso, desativar (ToggleAtivo) é o caminho.
+export async function getUsoModulo(numero: number) {
+  const [alunos, grade] = await Promise.all([
+    supabase.from('alunos').select('id', { count: 'exact', head: true }).eq('modulo', numero),
+    supabase.from('aulas_recorrentes').select('id', { count: 'exact', head: true }).contains('modulos', [numero]),
+  ]);
+  if (alunos.error) throw alunos.error;
+  if (grade.error) throw grade.error;
+  return { alunos: alunos.count ?? 0, grade: grade.count ?? 0 };
+}
+
+export async function excluirModulo(numero: number) {
+  const { error } = await supabase.from('modulos').delete().eq('numero', numero);
+  if (error) throw error;
+}
+
 // Um módulo pode ter mais de um professor responsável, e um mesmo horário
 // pode juntar módulos diferentes — por isso o vínculo é por (aula, módulo),
 // não uma coluna única na aula inteira.
@@ -205,15 +272,27 @@ export async function getAlunosPorModulos(modulos: number[]) {
 // Quem pode dar aula: dono e professor, e só quem ainda está ativo na escola.
 // O aluno não aparece aqui porque aula particular não é agendada por ele, é
 // agendada pra ele.
+//
+// Duas fontes porque a RLS de perfis não expõe o professor inteiro pra quem
+// não tem vínculo com ele (correto — evita vazar telefone/dados de contas
+// sem relação nenhuma, ver supabase/migrations/0033): a tabela devolve só
+// quem a política de linha já libera (o próprio, quem é dono, ou o
+// professor do módulo do aluno); a RPC completa com nome (só nome, nunca
+// telefone) de quem declarou disponibilidade pra particular, mesmo fora do
+// módulo — é o que fecha a lista pro fluxo de "aula particular".
 export async function getProfessores() {
-  const { data, error } = await supabase
-    .from('perfis')
-    .select('id, nome')
-    .in('papel', ['dono', 'professor'])
-    .eq('ativo', true)
-    .order('nome');
-  if (error) throw error;
-  return data as ProfessorAula[];
+  const [{ data: doTable, error: erroTable }, { data: disponiveis, error: erroDisponiveis }] = await Promise.all([
+    supabase.from('perfis').select('id, nome').in('papel', ['dono', 'professor']).eq('ativo', true).order('nome'),
+    supabase.rpc('nomes_professores_disponiveis_particular'),
+  ]);
+  if (erroTable) throw erroTable;
+  if (erroDisponiveis) throw erroDisponiveis;
+
+  const porId = new Map<string, ProfessorAula>();
+  for (const p of doTable ?? []) porId.set(p.id, p as ProfessorAula);
+  for (const p of disponiveis ?? []) if (!porId.has(p.id)) porId.set(p.id, p as ProfessorAula);
+
+  return Array.from(porId.values()).sort((a, b) => a.nome.localeCompare(b.nome));
 }
 
 export type AulaParticular = {
@@ -541,11 +620,23 @@ export async function getPedidosPendentes(aulaId: string) {
 // equipe já tinha marcado esse aluno por fora, o conflito é só ignorado, já
 // que o resultado final que importa é "presente") e fecha o pedido.
 export async function aprovarPedido(pedido: PedidoPresenca, decididoPor: string | null) {
-  try {
-    await marcarPresenca(pedido.aula_id, pedido.aluno_id, 'presente', decididoPor, null);
-  } catch (err) {
-    if (!(err instanceof ConflitoPresencaError)) throw err;
-  }
+  // versaoConhecida precisa ser a versão atual de verdade, não null — null só
+  // funciona quando ainda não existe nenhum registro de presença pro aluno;
+  // se o staff já tinha marcado falta/presença manualmente antes de aprovar
+  // o pedido, marcarPresenca sempre lançava ConflitoPresencaError aqui, e o
+  // catch abaixo engolia o erro: o pedido virava "aprovado" mas a presença
+  // nunca era escrita de fato. Lendo a versão atual primeiro, o caminho
+  // comum escreve normalmente, e só um conflito de verdade (alguém mudando
+  // a presença entre esta leitura e a escrita) ainda propaga o erro.
+  const { data: atual, error: erroAtual } = await supabase
+    .from('presencas')
+    .select('registrado_em')
+    .eq('aula_id', pedido.aula_id)
+    .eq('aluno_id', pedido.aluno_id)
+    .maybeSingle();
+  if (erroAtual) throw erroAtual;
+
+  await marcarPresenca(pedido.aula_id, pedido.aluno_id, 'presente', decididoPor, atual?.registrado_em ?? null);
 
   const { error } = await supabase
     .from('pedidos_presenca')
@@ -580,27 +671,27 @@ export async function marcarPresenca(
   registradoPor: string | null,
   versaoConhecida: string | null
 ) {
-  const { data: atual, error: erroSelect } = await supabase
-    .from('presencas')
-    .select('registrado_em')
-    .eq('aula_id', aulaId)
-    .eq('aluno_id', alunoId)
-    .maybeSingle();
-  if (erroSelect) throw erroSelect;
+  // RPC marcar_presenca (0036) faz a leitura+escrita condicional num único
+  // statement no banco — SELECT-then-UPSERT em dois passos separados (como
+  // era antes) deixa uma janela real pra duas escritas concorrentes lerem a
+  // mesma versão antiga e nenhuma delas ver o conflito.
+  const { data, error } = await supabase.rpc('marcar_presenca', {
+    p_aula_id: aulaId,
+    p_aluno_id: alunoId,
+    p_status: status,
+    p_registrado_por: registradoPor,
+    p_versao_conhecida: versaoConhecida,
+  });
 
-  const versaoAtual = atual?.registrado_em ?? null;
-  if (versaoAtual !== versaoConhecida) {
-    throw new ConflitoPresencaError();
+  if (error) {
+    // errcode 'P0100' é o SQLSTATE dedicado que marcar_presenca (0036) usa
+    // pra sinalizar conflito de versão — mais preciso que casar por texto
+    // solto em error.message.
+    if (error.code === 'P0100') {
+      throw new ConflitoPresencaError();
+    }
+    throw error;
   }
 
-  const agora = new Date().toISOString();
-  const { error } = await supabase
-    .from('presencas')
-    .upsert(
-      { aula_id: aulaId, aluno_id: alunoId, status, registrado_por: registradoPor, registrado_em: agora },
-      { onConflict: 'aula_id,aluno_id' }
-    );
-  if (error) throw error;
-
-  return agora;
+  return data as string;
 }

@@ -92,6 +92,39 @@ Ja perguntado e respondido em `chamada-agenda-frequencia.md`: aceitavel como est
 - Quando `titular === 'proprio'` (aluno que se cadastra sozinho, ex. adolescente), mantem `papel = 'aluno'`, sem criar `alunos` automaticamente — segue precisando do vinculo manual do staff, ja que nesse caso nao ha, no cadastro, nenhum dado que identifique a qual aluno existente aquela conta pertence.
 - Isso ainda **nao resolve multiplos filhos por conta** (uma conta `responsavel` continua apontando para 1 `alunos.perfil_id`, pela mesma restricao `unique` de hoje) — essa parte do achado 4.3 fica registrada como fora de escopo desta rodada, ja que nao foi perguntada nem decidida explicitamente; posso trazer de volta se voce quiser tratar tambem agora.
 
+**Retomada (2026-09-21) — achado 4.3 volta ao escopo, com um caso a mais**
+
+Pedido direto do usuario: o mesmo perfil pode ser, ao mesmo tempo, aluno matriculado **e** responsavel por outros alunos matriculados (ex.: pai/mae que tambem pratica, com filho(s) tambem na escola). Isso e mais amplo que "responsavel com dois filhos" — sao 3 formatos de identidade que o modelo de hoje nao distingue:
+
+1. **Responsavel puro** — 1+ filhos matriculados, sem matricula propria.
+2. **Aluno-responsavel** — matriculado por conta propria **e** responsavel por 1+ outros matriculados.
+3. **Aluno adulto sem filhos** — caso unico que ja funciona hoje.
+
+Causa raiz confirmada: `alunos.perfil_id unique` + `AuthProvider` resolvendo `meuAluno` com `.maybeSingle()` — estruturalmente 1 login so pode apontar pra 1 `alunos`. `aluno` e `responsavel` ja tem acesso identico no RLS/UI (decisao 1 acima), entao o problema nao e o enum `papel` — e essa relacao 1-pra-1.
+
+| # | Pergunta | Decisao |
+|---|---|---|
+| 4 | Multiplos alunos por conta (achado 4.3, retomado) | **Trocar `alunos.perfil_id` (FK unica) por uma tabela de vinculo `perfil_id ↔ aluno_id` muitos-pra-muitos**, com uma `relacao` (`proprio` ou `responsavel`) por vinculo — a propria matricula da pessoa vira so mais uma linha dessa relacao, unificando os 3 formatos acima |
+| 5 | Navegacao entre alunos vinculados | **Seletor no topo das telas** (Frequencia, Evolucao, autocheckin em `chamada/[id].tsx`) — "Vendo dados de: [nome ▾]" — lembrando a ultima escolha, visivel so quando ha mais de 1 vinculo |
+| 6 | Como adicionar um vinculo extra a uma conta existente | **Automatico por e-mail tambem**, reaproveitando o padrao de `vincula_aluno_por_email` (0020/0030) — se o e-mail do responsavel usado numa conta ja existente bater com o `responsavel_email` de outro aluno cadastrado depois, vincula sozinho. Mesmo risco de falso-match por e-mail reaproveitado que esse fluxo ja tem hoje, agora valendo tambem pra vinculos adicionais (nao so o primeiro) |
+
+### 5.2 Desenho decorrente da decisao 4-6
+
+- **Migration**: nova tabela `vinculos_aluno (id, perfil_id references perfis, aluno_id references alunos, relacao text check in ('proprio','responsavel'), criado_em, unique(perfil_id, aluno_id))`. Backfill a partir de `alunos.perfil_id` existente: `relacao = 'proprio'` quando `perfis.papel = 'aluno'`, `relacao = 'responsavel'` quando `perfis.papel = 'responsavel'` (infere da semantica do fluxo de signup da decisao 1: `titular = 'proprio'` sempre resultou em `papel = 'aluno'`; `titular = 'responsavel'` sempre resultou em `papel = 'responsavel'`). Depois do backfill, `alunos.perfil_id` e removida — banco de producao ainda esta na janela em que isso e seguro (mesmo raciocinio ja aplicado em 0027).
+- **RLS**: nova funcao `sou_vinculado_ao_aluno(aluno_id uuid) returns boolean` (`exists (select 1 from vinculos_aluno where aluno_id = $1 and perfil_id = auth.uid())`), substituindo toda policy que hoje testa `alunos.perfil_id = auth.uid()` — a lista completa esta no bullet 2 da decisao 1 acima (contratos, testes_nivel, avaliacoes, status_habilidade_aluno, historico_nivel_evolucao, pedidos_presenca, presencas, `atualizar_meus_dados_aluno`, leitura do professor da propria turma).
+- **`vincula_aluno_por_email`/trigger (0020/0030)**: passam a fazer `insert into vinculos_aluno (perfil_id, aluno_id, relacao) values (p_perfil_id, v_aluno_id, 'responsavel')` em vez de `update alunos set perfil_id = ...` — sem a restricao de "so se `perfil_id is null`" que hoje limita a 1 vinculo; a checagem correta vira "esse `aluno_id` especifico ainda nao tem nenhum vinculo" (evita o mesmo aluno cair em duas contas por coincidencia de e-mail, mas nao limita quantos alunos uma conta pode acumular).
+- **`AuthProvider`**: `meuAluno` (singular) vira `meusAlunos: VinculoAluno[]`; novo estado `alunoSelecionadoId` (persistido, ex. AsyncStorage) + setter, default pro primeiro vinculo com `relacao = 'proprio'` se existir, senao o primeiro da lista. `meuAlunoCarregado` mantem o nome, agora cobrindo o carregamento da lista inteira.
+- **UI**: novo componente compartilhado `SeletorAluno` (mostrado so quando `meusAlunos.length > 1`) no topo de Frequencia, Evolucao/Minha Evolucao e do ramo autocheckin de `chamada/[id].tsx`; essas telas trocam a leitura direta de `meuAluno` pelo aluno selecionado no seletor.
+
+### 5.3 Backlog gerado pela retomada
+
+1. Migration: `vinculos_aluno`, backfill, remocao de `alunos.perfil_id`, funcao `sou_vinculado_ao_aluno`.
+2. Migration: reescrever as policies RLS listadas na decisao 1 (bullet 2) pra usar `sou_vinculado_ao_aluno`.
+3. Migration: `vincula_aluno_por_email`/trigger (0020/0030) passam a inserir em `vinculos_aluno` em vez de fazer `update` de `perfil_id`.
+4. `AuthProvider`: `meuAluno` → `meusAlunos` + `alunoSelecionadoId`.
+5. Novo componente `SeletorAluno`; adotado em Frequencia, Evolucao/Minha Evolucao, `AutocheckinAluno` (`chamada/[id].tsx`).
+6. Staff: tela de vinculo em `alunos/[id]/index.tsx` passa a permitir vincular uma conta ja vinculada a outro aluno (hoje a query de candidatos provavelmente assume vinculo unico — revisar `getPerfisNaoVinculados`/fluxo de vinculo manual).
+
 **Consentimento (decisao 3):**
 
 - Persistir, no momento do signup: `titular` escolhido (`proprio`/`responsavel`) e uma referencia a versao do texto de consentimento aceito, carimbados com data — coluna nova em `perfis` (ex.: `titular`, `consentimento_versao`, `consentimento_aceito_em`) e o texto de cada versao versionado em codigo (constante `CONSENTIMENTO`, ja existe em `signup.tsx`, so falta persistir qual foi aceita).
@@ -108,3 +141,14 @@ Este e o escopo mais amplo entre os documentos ate agora — nao e uma correcao 
 5. Remover o fluxo de "candidatos nao vinculados" (`getPerfisNaoVinculados`, secao de vinculo em `alunos/[id]/index.tsx`) para o caminho de responsavel — mantendo-o so para o caso remanescente de `titular === 'proprio'` sem vinculo (aluno que se cadastra sozinho).
 
 Proximo documento, seguindo a ordem combinada: `docs/product/eventos.md`.
+
+### 5.4 Retomada (2026-09-21) — responsavel cadastra os proprios filhos, no signup e depois
+
+Pedido direto do usuario, complementar a decisao 4 (§5.2): ate aqui, mesmo com `alunos.perfil_id` deixando de ser `unique` (0033), **nenhum caminho de self-service criava uma linha nova em `alunos`** — o autocadastro publico so criava a conta em `perfis`; todo vinculo dependia da equipe preencher `responsavel_email` numa ficha ja existente (0020/0033/0037) ou de convite explicito. Ou seja, o proprio filho *tinha* que ja estar cadastrado pela equipe antes de qualquer vinculo acontecer. Dois caminhos novos fecham essa lacuna, os dois criando o vinculo ja **confirmado** (diferente do vinculo por e-mail de 0037 — aqui e a propria conta autenticada digitando o nome, sem risco de "e-mail errado" digitado por outra pessoa):
+
+- **No cadastro:** `signup.tsx`, quando `titular === 'responsavel'`, ganha uma lista dinamica de campos "nome do filho" (0, 1 ou mais — opcional, pode ficar em branco). Os nomes preenchidos viajam em `raw_user_meta_data.filhos` (array) e `cria_perfil_novo_usuario()` (0038) cria uma linha em `alunos` por nome nao vazio, promovendo `papel` pra `responsavel` se ao menos um filho foi informado.
+- **Depois de registrado:** novo card "Adicionar filho(a)" em `app/(app)/perfil.tsx`, sempre visivel (papel e vinculo sao independentes — um dono/professor que tambem e pai/mae pode usar o mesmo caminho), chamando a RPC `adicionar_meu_filho` (0038) a qualquer momento.
+
+Os dois reaproveitam o mesmo helper interno (`adiciona_filho_confirmado`), evitando duplicar a logica de insert + promocao de papel. Isso nao substitui a decisao 4 (join table `vinculos_aluno`) nem a decisao 5 (`SeletorAluno` persistido) — **so adiciona a origem que faltava pros alunos que passam a existir por essas duas RPCs, sem exigir que a equipe cadastre a crianca primeiro.**
+
+**Correcao no mesmo dia:** a primeira versao do formulario de cadastro so perguntava pelos filhos, cobrindo o caso 1 (responsavel puro) mas nao o caso 2 (aluno-responsavel) — ninguem perguntava se a propria pessoa tambem treina na escola. Adicionado um checkbox "Eu tambem sou aluno(a) matriculado(a)..." (so visivel quando `titular === 'responsavel'`); quando marcado, `signup.tsx` inclui o proprio `nome` no mesmo array `filhos` enviado a `cria_perfil_novo_usuario()` — sem migration nova, ja que da perspectiva da trigger um nome nessa lista e so "mais um aluno pra vincular a essa conta", nao importa se e a propria pessoa ou um filho dela.

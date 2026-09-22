@@ -74,22 +74,40 @@ export default function RootLayout() {
     setVideoFinalizado(false);
     setAberturaMinimaConcluida(false);
     setAberturaForcadaConcluida(false);
-    player.currentTime = 0;
-    player.play();
+    // Build de release já visto derrubando o app inteiro num FunctionCall
+    // Exception/NotFoundException do ExpoModulesCore quando o objeto nativo
+    // do player some antes do esperado — a abertura é só cosmética, então
+    // qualquer chamada nele (aqui, no listener e no cleanup abaixo) nunca
+    // pode ser motivo pra crashar o app: se falhar, só pula a abertura.
+    let subscription: { remove: () => void } | undefined;
+    try {
+      player.currentTime = 0;
+      player.play();
+      subscription = (
+        player as unknown as {
+          addListener?: (eventName: 'playToEnd', callback: () => void) => { remove: () => void };
+        }
+      ).addListener?.('playToEnd', () => setVideoFinalizado(true));
+    } catch (err) {
+      console.error(err);
+      setVideoFinalizado(true);
+    }
 
     const timerMinimo = setTimeout(() => setAberturaMinimaConcluida(true), DURACAO_MINIMA_ABERTURA_MS);
     const timerForcado = setTimeout(() => setAberturaForcadaConcluida(true), DURACAO_MAXIMA_ABERTURA_MS);
-    const subscription = (
-      player as unknown as {
-        addListener?: (eventName: 'playToEnd', callback: () => void) => { remove: () => void };
-      }
-    ).addListener?.('playToEnd', () => setVideoFinalizado(true));
 
     return () => {
       clearTimeout(timerMinimo);
       clearTimeout(timerForcado);
       subscription?.remove();
-      player.pause();
+      // Mesmo motivo do try/catch acima: no teardown, o player pode já ter
+      // sido liberado pelo lado nativo — chamar pause() nele então é só
+      // ruído, nunca motivo pra derrubar o app.
+      try {
+        player.pause();
+      } catch (err) {
+        console.error(err);
+      }
     };
   }, [fontsLoaded, player]);
 

@@ -91,10 +91,20 @@ export default {
         );
       }
 
-      const { error: vinculoError } = await supabaseAdmin
-        .from('alunos')
-        .update({ perfil_id: convite.user.id })
-        .eq('id', alunoId);
+      // vincula_convite_aluno (0034) faz os dois updates (papel do convidado,
+      // depois perfil_id do aluno) numa transação só: se qualquer um dos dois
+      // falhar ou for rejeitado, os dois desfazem — sem isso, uma falha entre
+      // os dois updates deixava o aluno com perfil_id preenchido (bloqueando
+      // reenvio do convite) mas com o papel errado, sem correção automática.
+      // A guarda "papel = 'aluno'" dentro da function também cobre o caso de
+      // inviteUserByEmail reaproveitar o user.id de um convite pendente não
+      // confirmado pra esse mesmo e-mail (o GoTrue não erra nesse caso): se
+      // essa conta já existia com outro papel, a function recusa em vez de
+      // rebaixar uma conta que não é nossa pra vincular.
+      const { data: vinculado, error: vinculoError } = await supabaseAdmin.rpc('vincula_convite_aluno', {
+        p_aluno_id: alunoId,
+        p_perfil_id: convite.user.id,
+      });
 
       if (vinculoError) {
         return Response.json(
@@ -103,19 +113,13 @@ export default {
         );
       }
 
-      // Mesmo critério do vínculo automático por e-mail (0030): quem loga
-      // vinculado a um registro de aluno é, por padrão, o responsável por
-      // ele — não o próprio atleta. cria_perfil_novo_usuario() já inseriu
-      // 'aluno' (default seguro); corrige aqui pro papel real.
-      const { error: papelError } = await supabaseAdmin
-        .from('perfis')
-        .update({ papel: 'responsavel' })
-        .eq('id', convite.user.id);
-
-      if (papelError) {
+      if (!vinculado) {
         return Response.json(
-          { ok: false, error: 'Aluno vinculado, mas não foi possível ajustar o papel da conta.' },
-          { status: 500, headers: corsHeaders }
+          {
+            ok: false,
+            error: 'Esse e-mail já pertence a uma conta existente com outro papel. Fale com o suporte.',
+          },
+          { status: 409, headers: corsHeaders }
         );
       }
 

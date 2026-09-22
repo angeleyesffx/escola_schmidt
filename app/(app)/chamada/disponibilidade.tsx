@@ -23,11 +23,14 @@ import {
 import { formatDataISO } from '../../../src/features/chamada/calendar';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
+import { confirmar } from '../../../src/lib/confirmar';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
 import { Chip } from '../../../src/components/Chip';
 import { Dropdown } from '../../../src/components/Dropdown';
 import { DateRangePicker } from '../../../src/components/DateRangePicker';
+import { FormModal } from '../../../src/components/FormModal';
+import { RowActions } from '../../../src/components/RowActions';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
 
 const OPCOES_RECORRENCIA: { valor: TipoRecorrencia; label: string }[] = [
@@ -61,6 +64,16 @@ function formatPeriodo(item: DisponibilidadeParticular) {
   return `${formatBR(item.data_inicio)} → ${formatBR(item.data_fim!)}`;
 }
 
+// Início = fim (ou sem fim, que é como 'unica' já é salva) faz qualquer
+// recorrência ocorrer só naquele 1 dia — na prática o mesmo padrão que
+// 'unica', só com outro rótulo. Sem essa normalização, dava pra cadastrar
+// "Diariamente 20/09→20/09" e depois "Mensalmente 20/09→20/09" como se
+// fossem janelas diferentes, quando cobrem exatamente o mesmo dia/hora.
+function chaveJanela(dataInicio: string, dataFim: string | null, tipo: TipoRecorrencia) {
+  const efetivamenteUnica = tipo === 'unica' || !dataFim || dataFim === dataInicio;
+  return efetivamenteUnica ? `unica|${dataInicio}` : `${tipo}|${dataInicio}|${dataFim}`;
+}
+
 export default function DisponibilidadeParticularScreen() {
   const { meuPapel, session } = useAuth();
   const souDono = meuPapel === 'dono';
@@ -72,6 +85,7 @@ export default function DisponibilidadeParticularScreen() {
   const professores = dadosProfessores ?? [];
   const opcoesProfessores = professores.map((p) => ({ value: p.id, label: p.nome }));
 
+  const [modalAberto, setModalAberto] = useState(false);
   const [dataInicio, setDataInicio] = useState(formatDataISO(new Date()));
   const [dataInicioAberta, setDataInicioAberta] = useState(false);
   const [tipoRecorrencia, setTipoRecorrencia] = useState<TipoRecorrencia>('unica');
@@ -93,7 +107,6 @@ export default function DisponibilidadeParticularScreen() {
     enabled: Boolean(professorId),
     mensagemErro: 'Erro ao carregar horários livres. Tente novamente.',
   });
-  const error = erroSalvar ?? erroCarregar;
 
   // Trocar de professor (dono) começa o formulário do zero — evita salvar
   // sem querer uma disponibilidade montada pra outra pessoa.
@@ -101,7 +114,23 @@ export default function DisponibilidadeParticularScreen() {
     setHorasEmEdicao([]);
     setHoraInput('');
     setErroSalvar(null);
+    setModalAberto(false);
   }, [professorId]);
+
+  function abrirNovo() {
+    setDataInicio(formatDataISO(new Date()));
+    setTipoRecorrencia('unica');
+    setDataFim(formatDataISO(new Date()));
+    setHorasEmEdicao([]);
+    setHoraInput('');
+    setErroSalvar(null);
+    setModalAberto(true);
+  }
+
+  function fecharModal() {
+    if (salvando) return;
+    setModalAberto(false);
+  }
 
   function adicionarHora() {
     const valor = horaInput.trim();
@@ -128,8 +157,25 @@ export default function DisponibilidadeParticularScreen() {
       setErroSalvar('Adicione ao menos um horário.');
       return;
     }
-    if (tipoRecorrencia !== 'unica' && dataFim < dataInicio) {
-      setErroSalvar('A data de fim precisa ser igual ou depois da data de início.');
+    // Início = fim quando repete é ambíguo (colapsa pro mesmo único dia que
+    // 'unica' já representa, só com outro rótulo — era assim que a mesma
+    // janela dava pra ser cadastrada duas vezes). Só 'unica' representa 1 dia.
+    if (tipoRecorrencia !== 'unica' && dataFim <= dataInicio) {
+      setErroSalvar('Repetição precisa de um período de mais de 1 dia. Pra um dia só, use "Não repete".');
+      return;
+    }
+
+    const dataFimEfetiva = tipoRecorrencia === 'unica' ? null : dataFim;
+    const chaveNova = chaveJanela(dataInicio, dataFimEfetiva, tipoRecorrencia);
+    const existenteConflitante = (disponibilidade ?? []).find((item) => {
+      if (chaveJanela(item.data_inicio, item.data_fim, item.tipo_recorrencia) !== chaveNova) return false;
+      return item.horas.some((h) => horasEmEdicao.includes(formatHora(h)));
+    });
+    if (existenteConflitante) {
+      const horasRepetidas = existenteConflitante.horas.map(formatHora).filter((h) => horasEmEdicao.includes(h));
+      setErroSalvar(
+        `${horasRepetidas.join(', ')} já ${horasRepetidas.length === 1 ? 'está cadastrado' : 'estão cadastrados'} nesse mesmo padrão de data (${ROTULO_RECORRENCIA[existenteConflitante.tipo_recorrencia]} · ${formatPeriodo(existenteConflitante)}).`
+      );
       return;
     }
 
@@ -145,12 +191,22 @@ export default function DisponibilidadeParticularScreen() {
       );
       recarregar();
       setHorasEmEdicao([]);
+      setModalAberto(false);
     } catch (err: unknown) {
       console.error(err);
       setErroSalvar('Erro ao adicionar horário. Tente novamente.');
     } finally {
       setSalvando(false);
     }
+  }
+
+  function confirmarRemocao(item: DisponibilidadeParticular) {
+    confirmar(
+      'Remover horário livre',
+      `Remover ${ROTULO_RECORRENCIA[item.tipo_recorrencia]} · ${formatPeriodo(item)} (${item.horas.map(formatHora).join(', ')})? Ninguém mais poderá marcar aula particular nesse horário.`,
+      'Remover',
+      () => remover(item)
+    );
   }
 
   async function remover(item: DisponibilidadeParticular) {
@@ -200,97 +256,15 @@ export default function DisponibilidadeParticularScreen() {
             <ActivityIndicator color={colors.primary} style={styles.loading} />
           ) : (
             <>
-              <Text style={[type.label, styles.rotulo]}>Início</Text>
-              <TouchableOpacity style={styles.input} onPress={() => setDataInicioAberta((atual) => !atual)}>
-                <Text style={styles.periodoTexto}>{formatBR(dataInicio)}</Text>
-              </TouchableOpacity>
-              {dataInicioAberta ? (
-                <DateRangePicker
-                  apenasUmDia
-                  inicioISO={dataInicio}
-                  fimISO={dataInicio}
-                  onConfirmar={(inicio) => {
-                    setDataInicio(inicio);
-                    setDataInicioAberta(false);
-                  }}
-                  onFechar={() => setDataInicioAberta(false)}
-                />
-              ) : null}
-
-              <Text style={[type.label, styles.rotulo]}>Repetição</Text>
-              <View style={styles.chips}>
-                {OPCOES_RECORRENCIA.map((opcao) => (
-                  <Chip
-                    key={opcao.valor}
-                    label={opcao.label}
-                    active={tipoRecorrencia === opcao.valor}
-                    onPress={() => setTipoRecorrencia(opcao.valor)}
-                  />
-                ))}
-              </View>
-
-              {tipoRecorrencia !== 'unica' ? (
-                <>
-                  <Text style={[type.label, styles.rotulo]}>Repetir até</Text>
-                  <TouchableOpacity style={styles.input} onPress={() => setDataFimAberta((atual) => !atual)}>
-                    <Text style={styles.periodoTexto}>{formatBR(dataFim)}</Text>
-                  </TouchableOpacity>
-                  {dataFimAberta ? (
-                    <DateRangePicker
-                      apenasUmDia
-                      inicioISO={dataFim}
-                      fimISO={dataFim}
-                      onConfirmar={(inicio) => {
-                        setDataFim(inicio);
-                        setDataFimAberta(false);
-                      }}
-                      onFechar={() => setDataFimAberta(false)}
-                    />
-                  ) : null}
-                </>
-              ) : null}
-
-              <Text style={[type.label, styles.rotulo]}>Horas</Text>
-              <View style={styles.adicionarRow}>
-                <TextInput
-                  style={[styles.input, styles.inputHora]}
-                  value={horaInput}
-                  onChangeText={setHoraInput}
-                  placeholder="HH:MM"
-                  keyboardType="numbers-and-punctuation"
-                  onSubmitEditing={adicionarHora}
-                />
-                <TouchableOpacity style={styles.adicionarBotao} onPress={adicionarHora}>
-                  <Text style={styles.adicionarBotaoTexto}>Adicionar</Text>
+              <View style={styles.topoRow}>
+                <Text style={styles.explicacao}>Horários livres pra aula particular, por padrão de data.</Text>
+                <TouchableOpacity testID="disponibilidade-abrir-novo" style={styles.novoBotao} onPress={abrirNovo}>
+                  <Text style={styles.novoBotaoTexto}>+ Horário</Text>
                 </TouchableOpacity>
               </View>
-              {horasEmEdicao.length > 0 ? (
-                <View style={styles.chips}>
-                  {horasEmEdicao.map((hora) => (
-                    <TouchableOpacity key={hora} style={styles.horaChip} onPress={() => removerHoraEmEdicao(hora)}>
-                      <Text style={styles.horaChipTexto}>{formatHora(hora)} ✕</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ) : (
-                <Text style={[type.caption, styles.subtitle]}>Adicione um ou mais horários pra esse padrão de data.</Text>
-              )}
 
-              {error ? <Text style={[type.body, styles.error]}>{error}</Text> : null}
+              {erroCarregar ? <Text style={[type.body, styles.error]}>{erroCarregar}</Text> : null}
 
-              <TouchableOpacity
-                style={[styles.salvarBotao, salvando && styles.botaoDesabilitado]}
-                onPress={salvar}
-                disabled={salvando}
-              >
-                {salvando ? (
-                  <ActivityIndicator color={colors.onPrimary} />
-                ) : (
-                  <Text style={styles.salvarBotaoTexto}>Salvar disponibilidade</Text>
-                )}
-              </TouchableOpacity>
-
-              <Text style={[type.label, styles.rotulo]}>Horários cadastrados</Text>
               {!disponibilidade || disponibilidade.length === 0 ? (
                 <Text style={[type.body, styles.subtitle]}>Nenhum horário cadastrado ainda.</Text>
               ) : (
@@ -303,9 +277,7 @@ export default function DisponibilidadeParticularScreen() {
                         </Text>
                         <Text style={[type.caption, styles.subtitle]}>{item.horas.map(formatHora).join(', ')}</Text>
                       </View>
-                      <TouchableOpacity style={styles.removerBotao} onPress={() => remover(item)}>
-                        <Text style={styles.removerBotaoTexto}>Remover</Text>
-                      </TouchableOpacity>
+                      <RowActions testIdBase={`disponibilidade-${item.id}`} onDelete={() => confirmarRemocao(item)} />
                     </View>
                   ))}
                 </View>
@@ -314,6 +286,109 @@ export default function DisponibilidadeParticularScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <FormModal visible={modalAberto} title="Novo horário" onClose={fecharModal}>
+        <Text style={[type.label, styles.campoRotulo]}>Início</Text>
+        <TouchableOpacity style={styles.input} onPress={() => setDataInicioAberta((atual) => !atual)}>
+          <Text style={styles.periodoTexto}>{formatBR(dataInicio)}</Text>
+        </TouchableOpacity>
+        {dataInicioAberta ? (
+          <DateRangePicker
+            apenasUmDia
+            inicioISO={dataInicio}
+            fimISO={dataInicio}
+            onConfirmar={(inicio) => {
+              setDataInicio(inicio);
+              setDataInicioAberta(false);
+            }}
+            onFechar={() => setDataInicioAberta(false)}
+          />
+        ) : null}
+
+        <Text style={[type.label, styles.campoRotulo]}>Repetição</Text>
+        <View style={styles.chips}>
+          {OPCOES_RECORRENCIA.map((opcao) => (
+            <Chip
+              key={opcao.valor}
+              label={opcao.label}
+              active={tipoRecorrencia === opcao.valor}
+              onPress={() => setTipoRecorrencia(opcao.valor)}
+            />
+          ))}
+        </View>
+
+        {tipoRecorrencia !== 'unica' ? (
+          <>
+            <Text style={[type.label, styles.campoRotulo]}>Repetir até</Text>
+            <TouchableOpacity style={styles.input} onPress={() => setDataFimAberta((atual) => !atual)}>
+              <Text style={styles.periodoTexto}>{formatBR(dataFim)}</Text>
+            </TouchableOpacity>
+            {dataFimAberta ? (
+              <DateRangePicker
+                apenasUmDia
+                inicioISO={dataFim}
+                fimISO={dataFim}
+                onConfirmar={(inicio) => {
+                  setDataFim(inicio);
+                  setDataFimAberta(false);
+                }}
+                onFechar={() => setDataFimAberta(false)}
+              />
+            ) : null}
+          </>
+        ) : null}
+
+        <Text style={[type.label, styles.campoRotulo]}>Horas</Text>
+        <View style={styles.adicionarRow}>
+          <TextInput
+            style={[styles.input, styles.inputHora]}
+            value={horaInput}
+            onChangeText={setHoraInput}
+            placeholder="HH:MM"
+            keyboardType="numbers-and-punctuation"
+            onSubmitEditing={adicionarHora}
+          />
+          <TouchableOpacity style={styles.adicionarBotao} onPress={adicionarHora}>
+            <Text style={styles.adicionarBotaoTexto}>Adicionar</Text>
+          </TouchableOpacity>
+        </View>
+        {horasEmEdicao.length > 0 ? (
+          <View style={styles.chips}>
+            {horasEmEdicao.map((hora) => (
+              <View key={hora} style={styles.horaChip}>
+                <Text style={styles.horaChipTexto}>{formatHora(hora)}</Text>
+                <TouchableOpacity
+                  style={styles.horaChipRemover}
+                  onPress={() => removerHoraEmEdicao(hora)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remover horário ${formatHora(hora)}`}
+                  hitSlop={8}
+                >
+                  <Text style={styles.horaChipRemoverTexto}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text style={[type.caption, styles.subtitle]}>Adicione um ou mais horários pra esse padrão de data.</Text>
+        )}
+
+        {erroSalvar ? <Text style={[type.body, styles.error]}>{erroSalvar}</Text> : null}
+
+        <TouchableOpacity
+          testID="disponibilidade-salvar"
+          style={[styles.salvarBotao, salvando && styles.botaoDesabilitado]}
+          onPress={salvar}
+          disabled={salvando}
+        >
+          {salvando ? (
+            <ActivityIndicator color={colors.onPrimary} />
+          ) : (
+            <Text style={styles.salvarBotaoTexto}>Adicionar horário</Text>
+          )}
+        </TouchableOpacity>
+      </FormModal>
+
       <Footer />
     </>
   );
@@ -341,6 +416,37 @@ const styles = StyleSheet.create({
   rotulo: {
     color: colors.textMuted,
     marginTop: spacing.lg,
+    marginBottom: spacing.xs,
+  },
+  topoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  explicacao: {
+    ...type.caption,
+    color: colors.textMuted,
+    flex: 1,
+  },
+  novoBotao: {
+    height: touchTarget,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  novoBotaoTexto: {
+    color: colors.onPrimary,
+    fontFamily: type.subtitle.fontFamily,
+    fontSize: type.subtitle.fontSize,
+  },
+  campoRotulo: {
+    color: colors.textMuted,
+    marginTop: spacing.md,
     marginBottom: spacing.xs,
   },
   input: {
@@ -385,18 +491,33 @@ const styles = StyleSheet.create({
     fontFamily: type.subtitle.fontFamily,
     fontSize: type.subtitle.fontSize,
   },
+  // Neutro, não o par borda-primary/fundo-tint do Chip de seleção — aqui
+  // tocar remove na hora, não seleciona (mesmo raciocínio de nova-teste.tsx).
   horaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     minHeight: touchTarget,
-    paddingHorizontal: spacing.md,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.xs,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.primary,
-    backgroundColor: colors.surfaceTint,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  horaChipTexto: {
+    color: colors.text,
+    fontFamily: type.subtitle.fontFamily,
+    fontSize: type.subtitle.fontSize,
+  },
+  horaChipRemover: {
+    width: touchTarget - 16,
+    height: touchTarget - 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  horaChipTexto: {
-    color: colors.primary,
+  horaChipRemoverTexto: {
+    color: colors.danger,
     fontFamily: type.subtitle.fontFamily,
     fontSize: type.subtitle.fontSize,
   },
@@ -437,15 +558,5 @@ const styles = StyleSheet.create({
   },
   itemTextos: {
     flex: 1,
-  },
-  removerBotao: {
-    minHeight: touchTarget,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.sm,
-  },
-  removerBotaoTexto: {
-    color: colors.danger,
-    fontFamily: type.subtitle.fontFamily,
-    fontSize: type.label.fontSize,
   },
 });

@@ -25,28 +25,28 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/38</span>
+                <span class='fraction'>0/30</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/38</span>
+                <span class='fraction'>0/42</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/9</span>
+                <span class='fraction'>0/6</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/36</span>
+                <span class='fraction'>0/29</span>
             </div>
         
             
@@ -430,19 +430,7 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -501,6 +489,13 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -703,12 +698,17 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { useEffect, useState } from 'react';
-import { useRouter } from 'expo-router';
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { useRouter } from 'expo-router';
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 &nbsp;
-import { getAulasRecorrentesHoje, type AulaRecorrente } from '../../src/features/chamada/api';
+import { getAulasRecorrentesHoje } from '../../src/features/chamada/api';
 import { useAuth } from '../../src/features/auth/AuthProvider';
+import { useAsyncData } from '../../src/hooks/useAsyncData';
 import { PageHeader } from '../../src/components/PageHeader';
 import { Footer } from '../../src/components/Footer';
 import { colors, radius, spacing, touchTarget, type } from '../../src/constants/theme';
@@ -734,7 +734,7 @@ export default function <span class="fstat-no" title="function not covered" >Hom
   const { meuPapel } = <span class="cstat-no" title="statement not covered" >useAuth();</span>
   const router = <span class="cstat-no" title="statement not covered" >useRouter();</span>
   const { width } = <span class="cstat-no" title="statement not covered" >useWindowDimensions();</span>
-  const souAluno = <span class="cstat-no" title="statement not covered" >meuPapel === 'aluno';</span>
+  const souAluno = (<span class="cstat-no" title="statement not covered" >meuPapel === 'aluno' || meuPapel === 'responsavel')</span>;
   const duasColunas = <span class="cstat-no" title="statement not covered" >width &gt;= 760;</span>
   const larguraGrid = <span class="cstat-no" title="statement not covered" >Math.min(width - spacing.xl * 2, 980);</span>
   const heroAltura = <span class="cstat-no" title="statement not covered" >width &gt;= 980 ? 192 : width &gt;= 760 ? 176 : 168;</span>
@@ -749,20 +749,8 @@ export default function <span class="fstat-no" title="function not covered" >Hom
   const imagemIcone = <span class="cstat-no" title="statement not covered" >imagemLado + 6;</span>
   const cardPadding = <span class="cstat-no" title="statement not covered" >width &gt;= 900 ? spacing.xl : spacing.lg;</span>
 &nbsp;
-  const [aulasHoje, setAulasHoje] = <span class="cstat-no" title="statement not covered" >useState&lt;AulaRecorrente[]&gt;([]);</span>
-&nbsp;
-<span class="cstat-no" title="statement not covered" >  useEffect(<span class="fstat-no" title="function not covered" >()</span> =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >    if (souAluno) <span class="cstat-no" title="statement not covered" >return;</span></span>
-    let ativo = <span class="cstat-no" title="statement not covered" >true;</span>
-<span class="cstat-no" title="statement not covered" >    getAulasRecorrentesHoje(new Date().getDay())</span>
-      .then(<span class="fstat-no" title="function not covered" >(d</span>ados) =&gt; {
-<span class="cstat-no" title="statement not covered" >        if (ativo) <span class="cstat-no" title="statement not covered" >setAulasHoje(dados);</span></span>
-      })
-      .catch(<span class="fstat-no" title="function not covered" >(e</span>rr) =&gt; <span class="cstat-no" title="statement not covered" >console.error(err))</span>;
-<span class="cstat-no" title="statement not covered" >    return <span class="fstat-no" title="function not covered" >()</span> =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >      ativo = false;</span>
-    };
-  }, [souAluno]);
+  const { data } = <span class="cstat-no" title="statement not covered" >useAsyncData(<span class="fstat-no" title="function not covered" >()</span> =&gt; <span class="cstat-no" title="statement not covered" >getAulasRecorrentesHoje(new Date().getDay()),</span> [], { enabled: !souAluno });</span>
+  const aulasHoje = <span class="cstat-no" title="statement not covered" >data ?? [];</span>
 &nbsp;
   function <span class="fstat-no" title="function not covered" >abrirListaChamada(</span>) {
 <span class="cstat-no" title="statement not covered" >    if (aulasHoje.length === 1) {</span>
@@ -793,7 +781,7 @@ export default function <span class="fstat-no" title="function not covered" >Hom
               &lt;Text style={styles.heroTag}&gt;Painel&lt;/Text&gt;
               &lt;Text style={styles.heroTitulo}&gt;Bem-vinda à Escola Schmidt&lt;/Text&gt;
               &lt;Text style={styles.heroTexto}&gt;
-                {souAluno ? 'Acesse seu calendário e acompanhe seu progresso.' : 'Organize chamadas e acompanhe suas turmas.'}
+                {souAluno ? 'Acesse sua agenda e acompanhe seu progresso.' : 'Organize chamadas e acompanhe suas turmas.'}
               &lt;/Text&gt;
             &lt;/View&gt;
           &lt;/View&gt;
@@ -807,10 +795,10 @@ export default function <span class="fstat-no" title="function not covered" >Hom
             &lt;View style={[styles.cardImagemWrap, { width: imagemLado, height: imagemLado }]}&gt; 
               &lt;Image source={CARD_ILUSTRACOES.calendario} style={[styles.cardImagem, { width: imagemIcone, height: imagemIcone }]} /&gt;
             &lt;/View&gt;
-            &lt;Text style={styles.cardTitulo}&gt;Calendário&lt;/Text&gt;
+            &lt;Text style={styles.cardTitulo}&gt;Agenda&lt;/Text&gt;
             &lt;Text style={styles.cardTexto}&gt;Visualize semanas, meses e eventos.&lt;/Text&gt;
             &lt;View style={styles.cardAcaoRodape}&gt;
-              &lt;Text style={styles.cardAcaoTexto}&gt;Acessar calendário&lt;/Text&gt;
+              &lt;Text style={styles.cardAcaoTexto}&gt;Acessar agenda&lt;/Text&gt;
               &lt;View style={styles.cardAcaoSetaWrap}&gt;
                 &lt;Text style={styles.cardAcaoSeta}&gt;›&lt;/Text&gt;
               &lt;/View&gt;
@@ -838,7 +826,12 @@ export default function <span class="fstat-no" title="function not covered" >Hom
 &nbsp;
           {!souAluno ? (
             &lt;TouchableOpacity
-              style={[styles.cardAcao, duasColunas &amp;&amp; styles.cardAcaoMetade, { minHeight: cardMinHeight, padding: cardPadding }]}
+              style={[
+                styles.cardAcao,
+                duasColunas &amp;&amp; styles.cardAcaoMetade,
+                { minHeight: cardMinHeight, padding: cardPadding },
+                aulasHoje.length === 0 &amp;&amp; styles.cardAcaoOpaco,
+              ]}
               onPress={abrirListaChamada}
             &gt;
               &lt;View style={[styles.cardImagemWrap, { width: imagemLado, height: imagemLado }]}&gt;
@@ -849,7 +842,9 @@ export default function <span class="fstat-no" title="function not covered" >Hom
                 {aulasHoje.length === 0 ? 'Sem turmas agendadas para hoje.' : 'Abra a chamada das turmas de hoje.'}
               &lt;/Text&gt;
               &lt;View style={styles.cardAcaoRodape}&gt;
-                &lt;Text style={styles.cardAcaoTexto}&gt;Ver turmas&lt;/Text&gt;
+                &lt;Text style={styles.cardAcaoTexto}&gt;
+                  {aulasHoje.length === 0 ? 'Ver agenda completa' : 'Ver turmas'}
+                &lt;/Text&gt;
                 &lt;View style={styles.cardAcaoSetaWrap}&gt;
                   &lt;Text style={styles.cardAcaoSeta}&gt;›&lt;/Text&gt;
                 &lt;/View&gt;
@@ -962,6 +957,11 @@ const styles = <span class="cstat-no" title="statement not covered" >StyleSheet.
   cardAcaoMetade: {
     width: '48.8%',
   },
+  // Sem aula hoje o toque ainda leva pra agenda completa (não "some"), mas
+  // precisa parecer diferente de um card com ação disponível agora.
+  cardAcaoOpaco: {
+    opacity: 0.6,
+  },
   cardImagemWrap: {
     borderRadius: radius.md,
     alignItems: 'center',
@@ -1030,7 +1030,7 @@ const styles = <span class="cstat-no" title="statement not covered" >StyleSheet.
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-09-19T16:19:19.364Z
+                at 2026-09-21T23:32:11.649Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

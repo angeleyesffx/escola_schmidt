@@ -26,10 +26,17 @@ const HERO_IMG_LARGURA = 2064;
 const HERO_IMG_ALTURA = 512;
 
 export default function Home() {
-  const { meuPapel } = useAuth();
+  const { meuPapel, meusAlunos } = useAuth();
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const souAluno = (meuPapel === 'aluno' || meuPapel === 'responsavel');
+  // Papel e vínculo são independentes agora (docs/product/professor-como-aluno.md):
+  // um professor/dono que também treina na escola tem `meusAlunos` preenchido
+  // e deve ganhar o card de evolução SEM perder os cards de equipe — nunca
+  // troca um acesso pelo outro, só soma.
+  const souPapelAluno = meuPapel === 'aluno' || meuPapel === 'responsavel';
+  const souEquipe = meuPapel === 'dono' || meuPapel === 'professor';
+  const temAluno = meusAlunos.length > 0;
+  const mostrarCardEvolucao = souPapelAluno || temAluno;
   const duasColunas = width >= 760;
   const larguraGrid = Math.min(width - spacing.xl * 2, 980);
   const heroAltura = width >= 980 ? 192 : width >= 760 ? 176 : 168;
@@ -44,7 +51,7 @@ export default function Home() {
   const imagemIcone = imagemLado + 6;
   const cardPadding = width >= 900 ? spacing.xl : spacing.lg;
 
-  const { data } = useAsyncData(() => getAulasRecorrentesHoje(new Date().getDay()), [], { enabled: !souAluno });
+  const { data } = useAsyncData(() => getAulasRecorrentesHoje(new Date().getDay()), [], { enabled: souEquipe });
   const aulasHoje = data ?? [];
 
   function abrirListaChamada() {
@@ -76,7 +83,7 @@ export default function Home() {
               <Text style={styles.heroTag}>Painel</Text>
               <Text style={styles.heroTitulo}>Bem-vinda à Escola Schmidt</Text>
               <Text style={styles.heroTexto}>
-                {souAluno ? 'Acesse sua agenda e acompanhe seu progresso.' : 'Organize chamadas e acompanhe suas turmas.'}
+                {souEquipe ? 'Organize chamadas e acompanhe suas turmas.' : 'Acesse sua agenda e acompanhe seu progresso.'}
               </Text>
             </View>
           </View>
@@ -100,7 +107,7 @@ export default function Home() {
             </View>
           </TouchableOpacity>
 
-          {souAluno ? (
+          {mostrarCardEvolucao ? (
             <TouchableOpacity
               style={[styles.cardAcao, duasColunas && styles.cardAcaoMetade, { minHeight: cardMinHeight, padding: cardPadding }]}
               onPress={() => router.push('/minha-evolucao')}
@@ -119,7 +126,7 @@ export default function Home() {
             </TouchableOpacity>
           ) : null}
 
-          {!souAluno ? (
+          {souEquipe ? (
             <TouchableOpacity
               style={[
                 styles.cardAcao,
@@ -147,7 +154,7 @@ export default function Home() {
             </TouchableOpacity>
           ) : null}
 
-          {!souAluno ? (
+          {souEquipe ? (
             <TouchableOpacity
               style={[styles.cardAcao, duasColunas && styles.cardAcaoMetade, { minHeight: cardMinHeight, padding: cardPadding }]}
               onPress={() => router.push('/alunos')}

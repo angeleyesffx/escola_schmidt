@@ -188,6 +188,7 @@ export default function NovaAulaTeste() {
               value={nomeCandidato}
               onChangeText={setNomeCandidato}
               placeholder="Nome"
+              onSubmitEditing={adicionarCandidato}
             />
             <TextInput
               style={[styles.input, styles.inputCandidato]}
@@ -204,17 +205,22 @@ export default function NovaAulaTeste() {
           {candidatos.length > 0 ? (
             <View style={styles.chips}>
               {candidatos.map((c, indice) => (
-                <TouchableOpacity
-                  key={`${c.nome}-${indice}`}
-                  testID={`nova-teste-candidato-${indice}`}
-                  style={styles.candidatoChip}
-                  onPress={() => removerCandidato(indice)}
-                >
+                <View key={`${c.nome}-${indice}`} style={styles.candidatoChip}>
                   <Text style={styles.candidatoChipTexto}>
                     {c.nome}
-                    {c.telefone ? ` · ${c.telefone}` : ''} ✕
+                    {c.telefone ? ` · ${c.telefone}` : ''}
                   </Text>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    testID={`nova-teste-candidato-${indice}`}
+                    style={styles.candidatoChipRemover}
+                    onPress={() => removerCandidato(indice)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remover candidato ${c.nome}`}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.candidatoChipRemoverTexto}>✕</Text>
+                  </TouchableOpacity>
+                </View>
               ))}
             </View>
           ) : (
@@ -321,18 +327,35 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
+  // Estilo neutro (borda cinza, fundo branco), de propósito diferente do
+  // Chip de seleção (borda primary + fundo tint) usado no resto do app —
+  // aqui tocar não seleciona, remove; usar o mesmo visual do "ativo"
+  // confundia as duas ações.
   candidatoChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     minHeight: touchTarget,
-    paddingHorizontal: spacing.md,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.xs,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.primary,
-    backgroundColor: colors.surfaceTint,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  candidatoChipTexto: {
+    color: colors.text,
+    fontFamily: type.subtitle.fontFamily,
+    fontSize: type.subtitle.fontSize,
+  },
+  candidatoChipRemover: {
+    width: touchTarget - 16,
+    height: touchTarget - 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  candidatoChipTexto: {
-    color: colors.primary,
+  candidatoChipRemoverTexto: {
+    color: colors.danger,
     fontFamily: type.subtitle.fontFamily,
     fontSize: type.subtitle.fontSize,
   },

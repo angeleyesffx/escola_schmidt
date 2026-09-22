@@ -22,6 +22,7 @@ import { DateRangePicker } from '../../../src/components/DateRangePicker';
 import { Footer } from '../../../src/components/Footer';
 import { Chip } from '../../../src/components/Chip';
 import { Dropdown } from '../../../src/components/Dropdown';
+import { SeletorAluno } from '../../../src/components/SeletorAluno';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
 
 function formatBR(dataISO: string): string {
@@ -34,7 +35,7 @@ function formatHora(hora: string) {
 
 export default function NovaAulaParticular() {
   const router = useRouter();
-  const { meuPapel, session, meuAluno } = useAuth();
+  const { meuPapel, session, meusAlunos, meusAlunosCarregado } = useAuth();
   const souAluno = (meuPapel === 'aluno' || meuPapel === 'responsavel');
 
   const [alunoId, setAlunoId] = useState<string | null>(null);
@@ -69,11 +70,15 @@ export default function NovaAulaParticular() {
   const professores = dadosIniciais?.professores ?? [];
   const error = erroSalvar ?? erroCarregar;
 
+  // Com mais de um filho vinculado, mantém a escolha se ela continuar valida
+  // (chip abaixo troca), senão cai pro primeiro — mesmo padrão do restante
+  // do app pra "qual dos meus alunos".
   useEffect(() => {
-    if (souAluno && meuAluno) {
-      setAlunoId(meuAluno.id);
-    }
-  }, [souAluno, meuAluno]);
+    if (!souAluno) return;
+    setAlunoId((atual) =>
+      atual && meusAlunos.some((a) => a.id === atual) ? atual : (meusAlunos[0]?.id ?? null)
+    );
+  }, [souAluno, meusAlunos]);
 
   // A equipe só enxerga o próprio perfil na lista de professores (a não ser
   // que seja dono) — se veio 1 só, já pré-seleciona.
@@ -152,11 +157,25 @@ export default function NovaAulaParticular() {
     }
   }
 
-  if (souAluno && !meuAluno) {
+  if (souAluno && !meusAlunosCarregado) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.primary} />
       </View>
+    );
+  }
+
+  if (souAluno && meusAlunos.length === 0) {
+    return (
+      <>
+        <PageHeader titulo="Aula particular" />
+        <View style={styles.center}>
+          <Text style={[type.body, styles.subtitle]}>
+            Seu cadastro ainda não foi vinculado a um aluno. Fale com a escola.
+          </Text>
+        </View>
+        <Footer />
+      </>
     );
   }
 
@@ -178,9 +197,13 @@ export default function NovaAulaParticular() {
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <Text style={[type.label, styles.rotulo]}>Aluno</Text>
           {souAluno ? (
-            <View style={styles.input}>
-              <Text style={styles.periodoTexto}>{meuAluno?.nome}</Text>
-            </View>
+            meusAlunos.length > 1 ? (
+              <SeletorAluno alunos={meusAlunos} selecionadoId={alunoId} onSelecionar={setAlunoId} />
+            ) : (
+              <View style={styles.input}>
+                <Text style={styles.periodoTexto}>{meusAlunos[0]?.nome}</Text>
+              </View>
+            )
           ) : (
             <Dropdown
               testID="nova-particular-dropdown-aluno"
@@ -227,11 +250,17 @@ export default function NovaAulaParticular() {
             <ActivityIndicator color={colors.primary} style={styles.horariosLoading} />
           ) : horariosLivres.length === 0 ? (
             <Text style={[type.body, styles.subtitle]}>
-              Esse professor não tem horário livre pra particular nessa data. Ele pode cadastrar horários em{' '}
-              <Text style={styles.linkTexto} onPress={() => router.push('/chamada/disponibilidade')}>
-                Meus horários livres
-              </Text>
-              .
+              {souAluno
+                ? 'Esse professor não tem horário livre pra particular nessa data.'
+                : (
+                  <>
+                    Esse professor não tem horário livre pra particular nessa data. Ele pode cadastrar horários em{' '}
+                    <Text style={styles.linkTexto} onPress={() => router.push('/chamada/disponibilidade')}>
+                      Meus horários livres
+                    </Text>
+                    .
+                  </>
+                )}
             </Text>
           ) : (
             <View style={styles.chips}>
@@ -241,9 +270,11 @@ export default function NovaAulaParticular() {
             </View>
           )}
 
-          <TouchableOpacity style={styles.gerenciarBotao} onPress={() => router.push('/chamada/disponibilidade')}>
-            <Text style={styles.linkTexto}>Gerenciar horários livres</Text>
-          </TouchableOpacity>
+          {!souAluno ? (
+            <TouchableOpacity style={styles.gerenciarBotao} onPress={() => router.push('/chamada/disponibilidade')}>
+              <Text style={styles.linkTexto}>Gerenciar horários livres</Text>
+            </TouchableOpacity>
+          ) : null}
 
           <Text style={[type.label, styles.rotulo]}>Observações (opcional)</Text>
           <TextInput style={styles.input} value={observacoes} onChangeText={setObservacoes} placeholder="Detalhes" />

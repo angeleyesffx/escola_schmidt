@@ -3,7 +3,7 @@ import { Redirect, useRouter } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { getAlunos, type Aluno } from '../../../src/features/alunos/api';
-import { getGradeSemanal } from '../../../src/features/chamada/api';
+import { getGradeSemanal, getModulosAtivos, type Modulo } from '../../../src/features/chamada/api';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { normalizar } from '../../../src/lib/texto';
@@ -11,7 +11,6 @@ import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
 
-const MODULOS = [1, 2, 3, 4] as const;
 const DIAS_CURTOS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 type FiltroStatus = 'todos' | 'ativos' | 'inativos';
 
@@ -34,6 +33,9 @@ export default function AlunosIndex() {
   const { data: dadosGrade } = useAsyncData(getGradeSemanal, []);
   const grade = dadosGrade ?? [];
 
+  const { data: dadosModulos } = useAsyncData<Modulo[]>(getModulosAtivos, []);
+  const modulos = dadosModulos ?? [];
+
   const alunosFiltrados = useMemo(() => {
     const termo = normalizar(busca);
     return alunos.filter((item) => {
@@ -47,12 +49,12 @@ export default function AlunosIndex() {
 
   const alunosPorModulo = useMemo(() => {
     const mapa = new Map<number, Aluno[]>();
-    for (const m of MODULOS) mapa.set(m, []);
+    for (const m of modulos) mapa.set(m.numero, []);
     for (const aluno of alunosFiltrados) {
       mapa.get(aluno.modulo)?.push(aluno);
     }
     return mapa;
-  }, [alunosFiltrados]);
+  }, [alunosFiltrados, modulos]);
 
   function horariosDoModulo(modulo: number) {
     return grade
@@ -62,7 +64,8 @@ export default function AlunosIndex() {
   }
 
   const filtrosAtivos = busca.trim() !== '' || moduloFiltro !== null || statusFiltro !== 'todos';
-  const modulosVisiveis = moduloFiltro !== null ? [moduloFiltro] : MODULOS;
+  const modulosVisiveis =
+    moduloFiltro !== null ? modulos.filter((m) => m.numero === moduloFiltro) : modulos;
 
   function limparFiltros() {
     setBusca('');
@@ -125,15 +128,15 @@ export default function AlunosIndex() {
           >
             <Text style={[styles.chipTexto, statusFiltro === 'inativos' && styles.chipTextoAtivo]}>Inativos</Text>
           </TouchableOpacity>
-          {MODULOS.map((m) => (
+          {modulos.map((m) => (
             <TouchableOpacity
-              key={m}
-              style={[styles.chip, moduloFiltro === m && styles.chipAtivo]}
-              onPress={() => setModuloFiltro(moduloFiltro === m ? null : m)}
+              key={m.numero}
+              style={[styles.chip, moduloFiltro === m.numero && styles.chipAtivo]}
+              onPress={() => setModuloFiltro(moduloFiltro === m.numero ? null : m.numero)}
               accessibilityRole="button"
-              accessibilityState={{ selected: moduloFiltro === m }}
+              accessibilityState={{ selected: moduloFiltro === m.numero }}
             >
-              <Text style={[styles.chipTexto, moduloFiltro === m && styles.chipTextoAtivo]}>Módulo {m}</Text>
+              <Text style={[styles.chipTexto, moduloFiltro === m.numero && styles.chipTextoAtivo]}>{m.nome}</Text>
             </TouchableOpacity>
           ))}
           {filtrosAtivos ? (
@@ -152,12 +155,12 @@ export default function AlunosIndex() {
           showsHorizontalScrollIndicator={false}
         >
           {modulosVisiveis.map((m) => {
-            const alunosDoModulo = alunosPorModulo.get(m) ?? [];
-            const horarios = horariosDoModulo(m);
+            const alunosDoModulo = alunosPorModulo.get(m.numero) ?? [];
+            const horarios = horariosDoModulo(m.numero);
             return (
-              <View key={m} style={[styles.lane, moduloFiltro !== null && styles.laneUnica]}>
+              <View key={m.numero} style={[styles.lane, moduloFiltro !== null && styles.laneUnica]}>
                 <View style={styles.laneHeader}>
-                  <Text style={type.subtitle}>Módulo {m}</Text>
+                  <Text style={type.subtitle}>{m.nome}</Text>
                   <Text style={[type.caption, styles.laneHorarios]} numberOfLines={2}>
                     {horarios || 'Sem horário na grade'}
                   </Text>

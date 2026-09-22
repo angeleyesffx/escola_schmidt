@@ -5,6 +5,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 import { atualizarAtivo, atualizarPapel, getUsuario, type Usuario } from '../../../src/features/usuarios/api';
 import { useAuth, type Papel } from '../../../src/features/auth/AuthProvider';
 import { paraBR } from '../../../src/lib/dataBR';
+import { confirmar } from '../../../src/lib/confirmar';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
 import { Chip } from '../../../src/components/Chip';
@@ -48,6 +49,33 @@ export default function UsuarioDetalhe() {
   // Dono não pode se autorrebaixar nem se autodesativar por essa tela — sem
   // isso um clique errado tira o único acesso de gestão do próprio app.
   const editandoSiMesmo = usuario?.id === session?.user.id;
+
+  // Trocar papel/status é a ação de maior alcance do app (pode dar ou tirar
+  // acesso de Dono) — o resto do app já confirma ações bem menos sensíveis
+  // que essa, então essa não podia continuar sendo um único toque.
+  function confirmarMudarPapel(novoPapel: Papel) {
+    if (!usuario || editandoSiMesmo || novoPapel === usuario.papel) return;
+    const label = PAPEIS.find((p) => p.valor === novoPapel)?.label ?? novoPapel;
+    confirmar(
+      'Alterar papel',
+      `Mudar o papel de ${usuario.nome} para ${label}? Isso muda o que essa pessoa pode ver e fazer no app imediatamente.`,
+      'Alterar',
+      () => mudarPapel(novoPapel)
+    );
+  }
+
+  function confirmarAlternarAtivo() {
+    if (!usuario || editandoSiMesmo) return;
+    const vaiAtivar = !usuario.ativo;
+    confirmar(
+      vaiAtivar ? 'Ativar usuário' : 'Desativar usuário',
+      vaiAtivar
+        ? `Reativar o acesso de ${usuario.nome}?`
+        : `Desativar o acesso de ${usuario.nome}? A pessoa não vai conseguir mais entrar no app até ser reativada.`,
+      vaiAtivar ? 'Ativar' : 'Desativar',
+      alternarAtivo
+    );
+  }
 
   async function mudarPapel(novoPapel: Papel) {
     if (!usuario || editandoSiMesmo || novoPapel === usuario.papel) return;
@@ -117,15 +145,15 @@ export default function UsuarioDetalhe() {
                     key={p.valor}
                     label={p.label}
                     active={usuario.papel === p.valor}
-                    onPress={() => mudarPapel(p.valor)}
+                    onPress={() => confirmarMudarPapel(p.valor)}
                   />
                 ))}
               </View>
 
               <Text style={[type.label, styles.rotulo]}>Status</Text>
               <View style={styles.chips}>
-                <Chip label="Ativo" active={usuario.ativo} onPress={alternarAtivo} />
-                <Chip label="Inativo" active={!usuario.ativo} onPress={alternarAtivo} />
+                <Chip label="Ativo" active={usuario.ativo} onPress={confirmarAlternarAtivo} />
+                <Chip label="Inativo" active={!usuario.ativo} onPress={confirmarAlternarAtivo} />
               </View>
 
               {editandoSiMesmo ? (

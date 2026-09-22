@@ -34,3 +34,21 @@ export const storageComLembrarMe = {
     await AsyncStorage.removeItem(chave);
   },
 };
+
+const CHAVE_ULTIMO_EMAIL = '@escola_schmidt/ultimo_email';
+
+// "Lembrar de mim" também deveria pré-preencher o e-mail no próximo login —
+// controla isso à parte da sessão em si (acima), porque o e-mail é só
+// conveniência de digitação, sem risco de segurança em ficar no AsyncStorage
+// mesmo com a sessão indo só pra memória.
+export async function lerUltimoEmailLembrado(): Promise<string | null> {
+  return AsyncStorage.getItem(CHAVE_ULTIMO_EMAIL);
+}
+
+export async function salvarUltimoEmailLembrado(email: string, lembrar: boolean): Promise<void> {
+  if (lembrar) {
+    await AsyncStorage.setItem(CHAVE_ULTIMO_EMAIL, email);
+  } else {
+    await AsyncStorage.removeItem(CHAVE_ULTIMO_EMAIL);
+  }
+}

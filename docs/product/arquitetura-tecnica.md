@@ -194,6 +194,22 @@ Itens 3-6 do backlog de `papeis-e-permissoes.md` §7, mais o achado 6.1 (`QuickM
 - **`EvolucaoScreen`** (`src/features/evolucao/EvolucaoScreen.tsx`) — **fechado.** Texto "Pontuacao atual: X" abaixo da barra de progresso existente, so quando ha requisitos carregados — indicador complementar, nao substitui a barra (exatamente como pedido no §8.2).
 - **`src/features/evolucao/api.ts`/`types.ts`** — `valorBase` incluido em `RequisitoNivelEvolucao` e `HabilidadeCatalogo`; `getRequisitosNivel`/`getHabilidadesCatalogo` passam a selecionar `valor_base`; `criarHabilidade` ganhou 5o parametro obrigatorio `valorBase`; `atualizarHabilidade` aceita `valorBase` opcional.
 
+## 5.4 Retomada (2026-09-21): risco de rastreio de migration (§5, primeiro bullet) fechado
+
+Auditoria pos-Fase 4 identificou tres frentes de melhoria significativa: este risco, a lacuna de "professor tambem aluno" (ver §5.5) e cobertura de teste de `EvolucaoScreen`/`evolucao/api.ts` (esta ultima ainda em aberto). Comecando pela de maior alavancagem.
+
+**Achado:** `supabase migration list` mostrava as 32 migrations (`0001`-`0032`) com `local` preenchido e `remote` vazio em todas — exatamente o cenario que a secao 1.1 ja tinha exposto (migrations aplicadas manualmente via SQL Editor, nunca pela CLI, entao a tabela de bookkeeping `supabase_migrations.schema_migrations` nunca foi escrita). Projeto ja estava linkado localmente (`supabase/.temp/project-ref` presente), so faltava a reconciliacao.
+
+**Resolvido:** `supabase migration repair 0001 ... 0032 --status applied --linked` — marca as 32 versoes como aplicadas na tabela de bookkeeping remota, sem reexecutar nenhum SQL (comando existe exatamente pra esse cenario: reconciliar historico sem tocar em schema/dado). Confirmado com `supabase migration list` logo depois: `local` e `remote` batem nas 32 linhas.
+
+**Residual, sem bloqueio:** `supabase db diff --linked` (validacao adicional de que os arquivos de migration descrevem o schema real, letra por letra) precisa de Docker/Podman local pra subir o shadow database — indisponivel nesta sessao. Nao bloqueia nada: a reconciliacao ja resolve o risco pratico (evitar que o proximo `db push` tente recriar as 32 migrations do zero e falhe/corrompa estado). Rodar `supabase db diff --linked` quando houver Docker disponivel fica como verificacao complementar, nao urgente.
+
+**Dai pra frente:** qualquer migration nova deste ponto em diante deve ser aplicada via `supabase db push` (nao mais so colar no SQL Editor) pra manter o bookkeeping em sincronia — se o time continuar aplicando manualmente, o mesmo desalinhamento volta a acontecer.
+
+## 5.5 Retomada (2026-09-21): "professor tambem aluno" — confirmado que so a decisao existia, o codigo nao
+
+Item listado em "Itens aditivos" (paragrafo ja existente acima) como decisao fechada em `professor-como-aluno.md`, mas a auditoria de 2026-09-21 confirmou, lendo o codigo (nao so o documento), que **nada da mudanca de codigo tinha sido feito** — `AuthProvider.tsx`, `QuickMenu.tsx` e `minha-evolucao.tsx` ainda testavam `meuPapel === 'aluno' || meuPapel === 'responsavel'`, exatamente como antes da decisao. Ver commit desta data para a implementacao (condicao trocada pra depender de `meuAluno` existir, independente do papel; trava de autoavaliacao adicionada em `registrar_avaliacao_evolucao`).
+
 ## 6. Proximo passo
 
 **Status em 2026-09-20:** Fases 0-4 fechadas por completo — schema aplicado em producao (`0001`-`0025`), bootstrap do `dono` feito, Edge Functions deployadas, `.env` conferido, RLS de "Meus modulos" em vigor, consentimento persistido no signup, e a migracao Minha Evolucao <- Desempenho concluida nos 5 passos (atribuicao de metodologia, promocao de nivel com trigger pra `alunos.modulo`, remocao da edicao legada inline, tela de Jornada, radar chart). `aplica_teste_nivel` legado continua ligado de proposito (so desligar depois de validar o caminho novo em uso real — nao e um item pendente, e uma decisao operacional deliberada). Unico residual sem bloqueio tecnico e o item de manutencao de documentacao da Fase 0. Resta so o item aditivo de feriados (`eventos.md` §5.1), que nunca teve dependencia de fase nenhuma.

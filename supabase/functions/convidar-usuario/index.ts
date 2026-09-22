@@ -90,16 +90,34 @@ export default {
       }
 
       // O trigger cria_perfil_novo_usuario() já inseriu a linha com papel
-      // 'aluno' (default seguro); corrigimos aqui pro papel escolhido no convite.
-      const { error: papelError } = await supabaseAdmin
+      // 'aluno' (default seguro); corrigimos aqui pro papel escolhido no
+      // convite. `and papel = 'aluno'` evita sobrescrever o papel de uma
+      // conta que já existia antes deste convite — inviteUserByEmail pode
+      // reaproveitar o user.id de um convite pendente não confirmado pra
+      // esse mesmo e-mail (o GoTrue não erra nesse caso), e sem essa guarda
+      // um professor conseguiria rebaixar o papel de outra conta (ex.: um
+      // dono ainda não confirmado) só reconvidando o e-mail dela.
+      const { data: papelAtualizado, error: papelError } = await supabaseAdmin
         .from('perfis')
         .update({ papel })
-        .eq('id', convite.user.id);
+        .eq('id', convite.user.id)
+        .eq('papel', 'aluno')
+        .select('id');
 
       if (papelError) {
         return Response.json(
           { ok: false, error: 'Convite enviado, mas não foi possível definir o papel do usuário.' },
           { status: 500, headers: corsHeaders }
+        );
+      }
+
+      if (!papelAtualizado || papelAtualizado.length === 0) {
+        return Response.json(
+          {
+            ok: false,
+            error: 'Esse e-mail já pertence a uma conta existente com outro papel. Fale com o suporte.',
+          },
+          { status: 409, headers: corsHeaders }
         );
       }
 

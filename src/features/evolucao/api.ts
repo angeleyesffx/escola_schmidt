@@ -310,6 +310,24 @@ export async function atualizarModalidade(id: string, campos: Partial<{ nome: st
   if (error) throw error;
 }
 
+// Mesmo espírito de getUsoSlotGrade (src/features/chamada/api.ts) — categorias_habilidade
+// referencia modalidade_id com on delete cascade (0007): excluir sem checar
+// apagaria em cascata todas as categorias (e, por baixo, habilidades) dessa
+// modalidade. A UI só oferece excluir quando o retorno é 0.
+export async function getUsoModalidade(id: string) {
+  const { count, error } = await supabase
+    .from('categorias_habilidade')
+    .select('id', { count: 'exact', head: true })
+    .eq('modalidade_id', id);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+export async function excluirModalidade(id: string) {
+  const { error } = await supabase.from('modalidades_evolucao').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function getCategoriasCatalogo() {
   const { data, error } = await supabase
     .from('categorias_habilidade')
@@ -341,6 +359,22 @@ export async function atualizarCategoria(
   campos: Partial<{ nome: string; descricao: string | null; ordem: number; ativo: boolean }>
 ) {
   const { error } = await supabase.from('categorias_habilidade').update(campos).eq('id', id);
+  if (error) throw error;
+}
+
+// habilidades_catalogo referencia categoria_id com on delete cascade (0007) —
+// mesma lógica de getUsoModalidade acima, um nível abaixo.
+export async function getUsoCategoria(id: string) {
+  const { count, error } = await supabase
+    .from('habilidades_catalogo')
+    .select('id', { count: 'exact', head: true })
+    .eq('categoria_id', id);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+export async function excluirCategoria(id: string) {
+  const { error } = await supabase.from('categorias_habilidade').delete().eq('id', id);
   if (error) throw error;
 }
 
@@ -400,6 +434,30 @@ export async function atualizarHabilidade(
   if ('valorBase' in campos) payload.valor_base = campos.valorBase;
 
   const { error } = await supabase.from('habilidades_catalogo').update(payload).eq('id', id);
+  if (error) throw error;
+}
+
+// Três fontes de uso possíveis pra uma habilidade: avaliada em algum aluno
+// (avaliacoes_evolucao — on delete restrict, 0008), snapshot atual de algum
+// aluno (status_habilidade_aluno — on delete restrict, 0007) ou exigida em
+// algum nível (requisitos_nivel_evolucao — on delete cascade, 0007). As duas
+// primeiras o próprio banco já bloqueia; a terceira o banco deixaria cascatear
+// silenciosamente — contar aqui também evita remover uma habilidade exigida
+// num nível sem o dono perceber.
+export async function getUsoHabilidade(id: string) {
+  const [avaliacoes, status, requisitos] = await Promise.all([
+    supabase.from('avaliacoes_evolucao').select('id', { count: 'exact', head: true }).eq('habilidade_id', id),
+    supabase.from('status_habilidade_aluno').select('id', { count: 'exact', head: true }).eq('habilidade_id', id),
+    supabase.from('requisitos_nivel_evolucao').select('id', { count: 'exact', head: true }).eq('habilidade_id', id),
+  ]);
+  if (avaliacoes.error) throw avaliacoes.error;
+  if (status.error) throw status.error;
+  if (requisitos.error) throw requisitos.error;
+  return (avaliacoes.count ?? 0) + (status.count ?? 0) + (requisitos.count ?? 0);
+}
+
+export async function excluirHabilidade(id: string) {
+  const { error } = await supabase.from('habilidades_catalogo').delete().eq('id', id);
   if (error) throw error;
 }
 

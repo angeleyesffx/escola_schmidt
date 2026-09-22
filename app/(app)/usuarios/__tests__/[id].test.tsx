@@ -28,6 +28,12 @@ jest.mock('../../../../src/features/usuarios/api', () => ({
   atualizarAtivo: jest.fn(),
 }));
 
+// Troca de papel/status agora passa por confirmação (evita mudança de
+// acesso com um toque só) — o teste simula a pessoa confirmando.
+jest.mock('../../../../src/lib/confirmar', () => ({
+  confirmar: (_titulo: string, _mensagem: string, _texto: string, onConfirmar: () => void) => onConfirmar(),
+}));
+
 const mockGetUsuario = getUsuario as jest.MockedFunction<typeof getUsuario>;
 const mockAtualizarPapel = atualizarPapel as jest.MockedFunction<typeof atualizarPapel>;
 const mockAtualizarAtivo = atualizarAtivo as jest.MockedFunction<typeof atualizarAtivo>;
@@ -44,7 +50,7 @@ const USUARIO_BASE = {
 describe('UsuarioDetalhe', () => {
   beforeEach(() => {
     mockUseAuth.mockReset();
-    mockUseAuth.mockReturnValue({ meuPapel: 'dono', session: { user: { id: 'dono-1' } } });
+    mockUseAuth.mockReturnValue({ meuPapel: 'dono', session: { user: { id: 'dono-1' } }, meusAlunos: [] });
     mockGetUsuario.mockReset();
     mockGetUsuario.mockResolvedValue(USUARIO_BASE);
     mockAtualizarPapel.mockReset();
@@ -54,7 +60,7 @@ describe('UsuarioDetalhe', () => {
   });
 
   it('redirects away when the signed-in user is not the owner', async () => {
-    mockUseAuth.mockReturnValue({ meuPapel: 'professor', session: { user: { id: 'dono-1' } } });
+    mockUseAuth.mockReturnValue({ meuPapel: 'professor', session: { user: { id: 'dono-1' } }, meusAlunos: [] });
 
     await render(<UsuarioDetalhe />);
 
@@ -86,7 +92,7 @@ describe('UsuarioDetalhe', () => {
   // Guarda contra lockout: dono editando a própria linha não deve conseguir
   // mudar o próprio papel/status por essa tela.
   it('disables role and status changes when the owner is viewing their own profile', async () => {
-    mockUseAuth.mockReturnValue({ meuPapel: 'dono', session: { user: { id: 'user-2' } } });
+    mockUseAuth.mockReturnValue({ meuPapel: 'dono', session: { user: { id: 'user-2' } }, meusAlunos: [] });
 
     await render(<UsuarioDetalhe />);
 

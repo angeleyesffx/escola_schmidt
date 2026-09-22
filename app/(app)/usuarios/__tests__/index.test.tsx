@@ -32,13 +32,13 @@ describe('UsuariosIndex', () => {
   beforeEach(() => {
     mockPush.mockReset();
     mockUseAuth.mockReset();
-    mockUseAuth.mockReturnValue({ meuPapel: 'dono' });
+    mockUseAuth.mockReturnValue({ meuPapel: 'dono', meusAlunos: [] });
     mockGetUsuarios.mockReset();
     mockGetUsuarios.mockResolvedValue([]);
   });
 
   it('redirects away when the signed-in user is not the owner', async () => {
-    mockUseAuth.mockReturnValue({ meuPapel: 'professor' });
+    mockUseAuth.mockReturnValue({ meuPapel: 'professor', meusAlunos: [] });
 
     await render(<UsuariosIndex />);
 

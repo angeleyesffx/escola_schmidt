@@ -25,6 +25,7 @@ jest.mock('../../../../src/features/auth/AuthProvider', () => ({
   useAuth: () => ({
     session: { user: { id: 'user-1' } },
     meuPapel: 'dono',
+    meusAlunos: [],
   }),
 }));
 

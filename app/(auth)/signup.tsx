@@ -13,9 +13,13 @@ import {
 } from 'react-native';
 
 import { useAuth, type Titular } from '../../src/features/auth/AuthProvider';
+import { hojeBR, paraBR, paraISO } from '../../src/lib/dataBR';
 import { PageHeader } from '../../src/components/PageHeader';
 import { PasswordInput } from '../../src/components/PasswordInput';
+import { DateRangePicker } from '../../src/components/DateRangePicker';
 import { colors, fonts, radius, spacing, touchTarget, type } from '../../src/constants/theme';
+
+type FilhoForm = { nome: string; dataNascimento: string };
 
 // Versão do texto abaixo — muda só quando o texto muda de verdade, não a
 // cada deploy. Vai pra perfis.consentimento_versao (0023) pra saber depois
@@ -49,6 +53,23 @@ export default function Signup() {
   const [titular, setTitular] = useState<Titular>('proprio');
   const [aceite, setAceite] = useState(false);
   const [senhaTocada, setSenhaTocada] = useState(false);
+  // Opcional: quem escolhe "responsavel" pode listar os filhos aqui mesmo, ou
+  // deixar em branco e adicionar depois em Meu perfil — por isso não entra
+  // em `podeEnviar`. Sempre 1 campo pronto pra digitar; "+" adiciona mais.
+  // Nome e data andam juntos: se um for preenchido, o outro passa a ser
+  // exigido no submit (data de nascimento é obrigatória — faixa etária
+  // decide categoria de competição).
+  const [filhos, setFilhos] = useState<FilhoForm[]>([{ nome: '', dataNascimento: '' }]);
+  // Qual campo de data está aberto no momento — índice do filho, 'propria'
+  // (a pessoa também é aluno), ou null. Um só picker por vez, mesmo padrão
+  // de alunos/novo.tsx.
+  const [campoDataAberto, setCampoDataAberto] = useState<number | 'propria' | null>(null);
+  // "Aluno-responsavel" (docs/product/alunos-e-responsaveis.md §5.1, caso 2):
+  // quem é responsável por filho(s) e também treina na escola precisa marcar
+  // isso aqui — sem essa pergunta, o cadastro só criava o(s) filho(s) e
+  // nunca um `alunos` pra própria pessoa.
+  const [souTambemAluno, setSouTambemAluno] = useState(false);
+  const [dataNascimentoPropria, setDataNascimentoPropria] = useState('');
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -60,12 +81,74 @@ export default function Signup() {
   const senhasIguais = senha.length > 0 && senha === confirmarSenha;
   const podeEnviar = nomeValido && emailValido && senhaOk && senhasIguais && aceite && !submitting;
 
+  function atualizarFilhoNome(indice: number, texto: string) {
+    setFilhos((atual) => atual.map((f, i) => (i === indice ? { ...f, nome: texto } : f)));
+  }
+
+  function atualizarFilhoData(indice: number, texto: string) {
+    setFilhos((atual) => atual.map((f, i) => (i === indice ? { ...f, dataNascimento: texto } : f)));
+  }
+
+  function adicionarCampoFilho() {
+    setFilhos((atual) => [...atual, { nome: '', dataNascimento: '' }]);
+  }
+
+  function removerCampoFilho(indice: number) {
+    setFilhos((atual) =>
+      atual.length > 1 ? atual.filter((_, i) => i !== indice) : [{ nome: '', dataNascimento: '' }]
+    );
+  }
+
   async function handleSubmit() {
     setError(null);
     if (!podeEnviar) return;
 
+    // Linha em branco (nem nome nem data) é ignorada — a lista de filhos
+    // continua opcional como um todo. Mas quem preenche nome ou data precisa
+    // preencher os dois: data de nascimento é obrigatória (faixa etária
+    // decide categoria de competição), não dá pra cadastrar um filho sem ela.
+    const filhosPreenchidos =
+      titular === 'responsavel' ? filhos.filter((f) => f.nome.trim() || f.dataNascimento.trim()) : [];
+
+    for (const f of filhosPreenchidos) {
+      if (!f.nome.trim()) {
+        setError('Informe o nome de cada filho preenchido.');
+        return;
+      }
+      if (!paraISO(f.dataNascimento)) {
+        setError('Informe a data de nascimento de cada filho preenchido.');
+        return;
+      }
+    }
+
+    if (titular === 'responsavel' && souTambemAluno && !paraISO(dataNascimentoPropria)) {
+      setError('Informe sua data de nascimento.');
+      return;
+    }
+
+    const filhosValidos = filhosPreenchidos.map((f) => ({
+      nome: f.nome.trim(),
+      dataNascimento: paraISO(f.dataNascimento)!,
+    }));
+
+    // Marcar "eu também sou aluno" cria um `alunos` pra própria pessoa do
+    // mesmo jeito que um filho — mesma trigger (0038/0039), sem tratamento
+    // especial: um item nessa lista é só "mais um aluno pra vincular a essa
+    // conta", não importa se é a própria pessoa ou um filho dela.
+    const alunosParaEnviar =
+      titular === 'responsavel' && souTambemAluno
+        ? [{ nome: nome.trim(), dataNascimento: paraISO(dataNascimentoPropria)! }, ...filhosValidos]
+        : filhosValidos;
+
     setSubmitting(true);
-    const { error: signUpError } = await signUp(nome.trim(), email.trim(), senha, titular, CONSENTIMENTO_VERSAO);
+    const { error: signUpError } = await signUp(
+      nome.trim(),
+      email.trim(),
+      senha,
+      titular,
+      CONSENTIMENTO_VERSAO,
+      alunosParaEnviar
+    );
     setSubmitting(false);
 
     if (signUpError) {
@@ -165,6 +248,8 @@ export default function Signup() {
               testID="signup-titular-proprio"
               style={[styles.opcao, titular === 'proprio' && styles.opcaoAtiva]}
               onPress={() => setTitular('proprio')}
+              accessibilityRole="button"
+              accessibilityState={{ selected: titular === 'proprio' }}
             >
               <Text style={[styles.opcaoTexto, titular === 'proprio' && styles.opcaoTextoAtivo]}>
                 Mim mesmo (maior de idade)
@@ -174,6 +259,8 @@ export default function Signup() {
               testID="signup-titular-responsavel"
               style={[styles.opcao, titular === 'responsavel' && styles.opcaoAtiva]}
               onPress={() => setTitular('responsavel')}
+              accessibilityRole="button"
+              accessibilityState={{ selected: titular === 'responsavel' }}
             >
               <Text style={[styles.opcaoTexto, titular === 'responsavel' && styles.opcaoTextoAtivo]}>
                 Meu filho(a), menor de idade
@@ -181,10 +268,117 @@ export default function Signup() {
             </TouchableOpacity>
           </View>
 
+          {titular === 'responsavel' ? (
+            <TouchableOpacity
+              testID="signup-sou-tambem-aluno"
+              style={styles.consentimento}
+              onPress={() => setSouTambemAluno((atual) => !atual)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: souTambemAluno }}
+            >
+              <View style={[styles.checkbox, souTambemAluno && styles.checkboxMarcado]}>
+                {souTambemAluno ? <Text style={styles.checkboxMarca}>✓</Text> : null}
+              </View>
+              <Text style={[type.caption, styles.consentimentoTexto]}>
+                Eu também sou aluno(a) matriculado(a) na escola, além de responsável pelo(s) filho(s) abaixo.
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {titular === 'responsavel' && souTambemAluno ? (
+            <View style={styles.filhosWrap}>
+              <Text style={[type.label, styles.rotulo]}>Sua data de nascimento</Text>
+              <TouchableOpacity
+                testID="signup-data-propria"
+                style={styles.dataBotao}
+                onPress={() => setCampoDataAberto((atual) => (atual === 'propria' ? null : 'propria'))}
+              >
+                <Text style={dataNascimentoPropria ? styles.dataBotaoTexto : styles.dataBotaoPlaceholder}>
+                  {dataNascimentoPropria || 'Selecionar data'}
+                </Text>
+              </TouchableOpacity>
+              {campoDataAberto === 'propria' ? (
+                <DateRangePicker
+                  apenasUmDia
+                  inicioISO={paraISO(dataNascimentoPropria) ?? paraISO(hojeBR())!}
+                  fimISO={paraISO(dataNascimentoPropria) ?? paraISO(hojeBR())!}
+                  onConfirmar={(iso) => {
+                    setDataNascimentoPropria(paraBR(iso));
+                    setCampoDataAberto(null);
+                  }}
+                  onFechar={() => setCampoDataAberto(null)}
+                />
+              ) : null}
+            </View>
+          ) : null}
+
+          {titular === 'responsavel' ? (
+            <View style={styles.filhosWrap}>
+              <Text style={[type.label, styles.rotulo]}>Filho(s) (opcional)</Text>
+              <Text style={[type.caption, styles.filhosAjuda]}>
+                Pode preencher agora ou deixar em branco e adicionar depois em Meu perfil. Quem preencher o nome
+                precisa preencher a data de nascimento também.
+              </Text>
+              {filhos.map((filho, indice) => (
+                <View key={indice} style={styles.filhoLinha}>
+                  <View style={styles.filhoCampos}>
+                    <TextInput
+                      testID={`signup-filho-nome-${indice}`}
+                      style={[styles.input, styles.filhoInput]}
+                      placeholder="Nome do filho(a)"
+                      placeholderTextColor={colors.textMuted}
+                      value={filho.nome}
+                      onChangeText={(texto) => atualizarFilhoNome(indice, texto)}
+                      autoCapitalize="words"
+                    />
+                    <TouchableOpacity
+                      testID={`signup-filho-data-${indice}`}
+                      style={styles.dataBotao}
+                      onPress={() => setCampoDataAberto((atual) => (atual === indice ? null : indice))}
+                    >
+                      <Text style={filho.dataNascimento ? styles.dataBotaoTexto : styles.dataBotaoPlaceholder}>
+                        {filho.dataNascimento || 'Data de nascimento'}
+                      </Text>
+                    </TouchableOpacity>
+                    {campoDataAberto === indice ? (
+                      <DateRangePicker
+                        apenasUmDia
+                        inicioISO={paraISO(filho.dataNascimento) ?? paraISO(hojeBR())!}
+                        fimISO={paraISO(filho.dataNascimento) ?? paraISO(hojeBR())!}
+                        onConfirmar={(iso) => {
+                          atualizarFilhoData(indice, paraBR(iso));
+                          setCampoDataAberto(null);
+                        }}
+                        onFechar={() => setCampoDataAberto(null)}
+                      />
+                    ) : null}
+                  </View>
+                  <TouchableOpacity
+                    testID={`signup-filho-remover-${indice}`}
+                    style={styles.filhoRemover}
+                    onPress={() => removerCampoFilho(indice)}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.filhoRemoverTexto}>×</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+              <TouchableOpacity
+                testID="signup-filho-adicionar"
+                style={styles.filhoAdicionar}
+                onPress={adicionarCampoFilho}
+              >
+                <Text style={styles.filhoAdicionarTexto}>+ Adicionar outro filho</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           <TouchableOpacity
             testID="signup-consentimento-checkbox"
             style={styles.consentimento}
             onPress={() => setAceite((a) => !a)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: aceite }}
           >
             <View style={[styles.checkbox, aceite && styles.checkboxMarcado]}>
               {aceite ? <Text style={styles.checkboxMarca}>✓</Text> : null}
@@ -301,6 +495,62 @@ const styles = StyleSheet.create({
   },
   opcaoTextoAtivo: {
     color: colors.onPrimary,
+  },
+  filhosWrap: {
+    gap: spacing.xs,
+  },
+  filhosAjuda: {
+    color: colors.textMuted,
+  },
+  filhoLinha: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  filhoCampos: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  filhoInput: {
+    flex: 1,
+  },
+  filhoRemover: {
+    width: touchTarget,
+    height: touchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dataBotao: {
+    height: touchTarget,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.surface,
+  },
+  dataBotaoTexto: {
+    fontFamily: type.body.fontFamily,
+    fontSize: type.body.fontSize,
+    color: colors.text,
+  },
+  dataBotaoPlaceholder: {
+    fontFamily: type.body.fontFamily,
+    fontSize: type.body.fontSize,
+    color: colors.textMuted,
+  },
+  filhoRemoverTexto: {
+    fontSize: 22,
+    color: colors.textMuted,
+  },
+  filhoAdicionar: {
+    minHeight: touchTarget,
+    justifyContent: 'center',
+  },
+  filhoAdicionarTexto: {
+    color: colors.primary,
+    fontFamily: type.subtitle.fontFamily,
+    fontSize: type.subtitle.fontSize,
   },
   consentimento: {
     flexDirection: 'row',

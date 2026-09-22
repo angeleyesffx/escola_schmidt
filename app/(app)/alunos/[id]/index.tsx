@@ -1,8 +1,10 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
 import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 
 import {
+  atualizarAtivoAluno,
   desvincularPerfil,
   getAluno,
   getFrequenciaAluno,
@@ -24,6 +26,7 @@ import {
 } from '../../../../src/features/desempenho/api';
 import { useAuth } from '../../../../src/features/auth/AuthProvider';
 import { paraBR } from '../../../../src/lib/dataBR';
+import { confirmar } from '../../../../src/lib/confirmar';
 import { PageHeader } from '../../../../src/components/PageHeader';
 import { Footer } from '../../../../src/components/Footer';
 import { colors, radius, spacing, touchTarget, type } from '../../../../src/constants/theme';
@@ -70,8 +73,10 @@ export default function AlunoDetalhe() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { meuPapel } = useAuth();
+  const souDono = meuPapel === 'dono';
 
   const [aluno, setAluno] = useState<Aluno | null>(null);
+  const [alternandoAtivo, setAlternandoAtivo] = useState(false);
   const [perfilVinculado, setPerfilVinculado] = useState<PerfilAluno | null>(null);
   const [candidatos, setCandidatos] = useState<PerfilAluno[]>([]);
   const [registrosFrequencia, setRegistrosFrequencia] = useState<RegistroFrequencia[]>([]);
@@ -81,6 +86,12 @@ export default function AlunoDetalhe() {
   const [loading, setLoading] = useState(true);
   const [processando, setProcessando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Fechados por padrão: histórico legado e vínculo de conta são consulta
+  // ocasional, não o que o staff normalmente veio ver nesta tela — não
+  // deviam disputar espaço visual com Frequência, que é o motivo mais comum
+  // de abrir a ficha de um aluno.
+  const [legadoAberto, setLegadoAberto] = useState(false);
+  const [contaAberta, setContaAberta] = useState(false);
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -135,6 +146,16 @@ export default function AlunoDetalhe() {
     }
   }
 
+  function confirmarDesvincular() {
+    if (!aluno || !perfilVinculado) return;
+    confirmar(
+      'Desvincular conta',
+      `Desvincular o acesso de ${perfilVinculado.nome}? A pessoa perde o login vinculado a ${aluno.nome} até vincular de novo.`,
+      'Desvincular',
+      desvincular
+    );
+  }
+
   async function desvincular() {
     if (!aluno) return;
     setProcessando(true);
@@ -147,6 +168,22 @@ export default function AlunoDetalhe() {
       setError('Erro ao desvincular conta. Tente novamente.');
     } finally {
       setProcessando(false);
+    }
+  }
+
+  async function alternarAtivoAluno() {
+    if (!aluno) return;
+    setAlternandoAtivo(true);
+    setError(null);
+    try {
+      const novoValor = !aluno.ativo;
+      await atualizarAtivoAluno(aluno.id, novoValor);
+      setAluno({ ...aluno, ativo: novoValor });
+    } catch (err) {
+      console.error(err);
+      setError('Erro ao atualizar matrícula. Tente novamente.');
+    } finally {
+      setAlternandoAtivo(false);
     }
   }
 
@@ -177,10 +214,23 @@ export default function AlunoDetalhe() {
       <PageHeader titulo={aluno?.nome ?? 'Aluno'} />
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll}>
-          <Text style={[type.body, styles.subtitle]}>
-            Módulo {aluno?.modulo}
-            {aluno && !aluno.ativo ? ' · Inativo' : ''}
-          </Text>
+          <View style={styles.matriculaRow}>
+            <Text style={[type.body, styles.subtitle]}>
+              Módulo {aluno?.modulo}
+              {aluno && !aluno.ativo ? ' · Inativo' : ''}
+            </Text>
+            {souDono && aluno ? (
+              <View style={styles.matriculaToggle}>
+                <Text style={[type.caption, styles.subtitle]}>Matrícula ativa</Text>
+                <Switch
+                  testID="aluno-detalhe-matricula-ativa"
+                  value={aluno.ativo}
+                  onValueChange={alternarAtivoAluno}
+                  disabled={alternandoAtivo}
+                />
+              </View>
+            ) : null}
+          </View>
 
           <View style={styles.atalhosEvolucao}>
             <TouchableOpacity style={styles.atalhoSecundario} onPress={() => router.push(`/alunos/${id}/evolucao`)}>
@@ -226,112 +276,145 @@ export default function AlunoDetalhe() {
             </View>
           )}
 
-          <Text style={[type.label, styles.secao]}>Desempenho (histórico legado)</Text>
-          <Text style={[type.body, styles.subtitle]}>
-            Sistema descontinuado — novas avaliações e passagens de nível são feitas em Minha Evolução. O histórico
-            abaixo fica preservado só para consulta.
-          </Text>
-          <View style={styles.legenda}>
-            {NIVEIS.map((n) => (
-              <View key={n.nivel} style={styles.legendaItem}>
-                <View style={[styles.legendaCor, { backgroundColor: colors[n.cor] }]} />
-                <Text style={[type.caption, styles.legendaTexto]}>{n.legenda}</Text>
-              </View>
-            ))}
-          </View>
+          <TouchableOpacity
+            style={styles.legadoHeader}
+            onPress={() => setLegadoAberto((atual) => !atual)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: legadoAberto }}
+          >
+            <Text style={[type.label, styles.secao, styles.legadoHeaderTexto]}>Desempenho (histórico legado)</Text>
+            <Ionicons name={legadoAberto ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+          </TouchableOpacity>
 
-          <Text style={[type.label, styles.subsecao]}>Linha do tempo</Text>
-          {eventosDesempenho.length === 0 ? (
-            <Text style={[type.body, styles.subtitle, styles.vazio]}>Nenhuma avaliação registrada ainda.</Text>
-          ) : (
-            eventosDesempenho.map((item, index) => {
-              const ultimo = index === eventosDesempenho.length - 1;
-              const teste = item.tipo === 'teste';
-              return (
-                <View key={`${item.tipo}-${item.data}-${index}`} style={styles.linha}>
-                  <View style={styles.trilha}>
-                    <View style={[styles.no, teste ? styles.noTeste : styles.noAvaliacao]} />
-                    {!ultimo ? <View style={styles.conector} /> : null}
-                  </View>
-                  <View style={styles.conteudo}>
-                    <Text style={[type.caption, styles.dataTexto]}>{paraBR(item.data)}</Text>
-                    {item.tipo === 'avaliacao' ? (
-                      <View style={styles.cartao}>
-                        <View style={styles.chipsAvaliacao}>
-                          {item.itens.map((a) => {
-                            const nivelInfo = NIVEIS.find((n) => n.nivel === a.nivel)!;
-                            return (
-                              <View key={a.id} style={styles.chipAvaliacao}>
-                                <View style={[styles.chipAvaliacaoCor, { backgroundColor: colors[nivelInfo.cor] }]} />
-                                <Text style={[type.caption, styles.chipAvaliacaoTexto]}>
-                                  {nomePorHabilidade[a.habilidade_id] ?? 'Habilidade'}
-                                </Text>
-                              </View>
-                            );
-                          })}
-                        </View>
-                      </View>
-                    ) : (
-                      <View style={[styles.cartao, styles.cartaoTeste]}>
-                        <Text style={type.subtitle}>
-                          Módulo {item.teste.modulo_de} → Módulo {item.teste.modulo_para}
-                        </Text>
-                        <Text style={[type.label, item.teste.aprovado ? styles.badgeAprovado : styles.badgeReprovado]}>
-                          {item.teste.aprovado ? 'Aprovado' : 'Não aprovado'}
-                        </Text>
-                        {item.teste.observacoes ? (
-                          <Text style={[type.body, styles.cardSubtitle]}>{item.teste.observacoes}</Text>
-                        ) : null}
-                      </View>
-                    )}
-                  </View>
-                </View>
-              );
-            })
-          )}
-
-          <Text style={[type.label, styles.secao]}>Conta de acesso (responsável/aluno)</Text>
-
-          {perfilVinculado ? (
-            <View style={styles.vinculadoCard}>
-              <Text style={type.subtitle}>{perfilVinculado.nome}</Text>
-              {perfilVinculado.telefone ? (
-                <Text style={[type.body, styles.cardSubtitle]}>{perfilVinculado.telefone}</Text>
-              ) : null}
-              <TouchableOpacity
-                style={[styles.desvincularBotao, processando && styles.botaoDesabilitado]}
-                onPress={desvincular}
-                disabled={processando}
-              >
-                <Text style={styles.desvincularTexto}>Desvincular</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
+          {legadoAberto ? (
             <>
               <Text style={[type.body, styles.subtitle]}>
-                Nenhuma conta vinculada. Escolha abaixo uma conta que já fez cadastro no app:
+                Sistema descontinuado — novas avaliações e passagens de nível são feitas em Minha Evolução. O
+                histórico abaixo fica preservado só para consulta.
               </Text>
-              {candidatos.length === 0 ? (
-                <Text style={[type.body, styles.subtitle, styles.vazio]}>
-                  Nenhuma conta aguardando vínculo no momento.
-                </Text>
+
+              <View style={styles.legenda}>
+                {NIVEIS.map((n) => (
+                  <View key={n.nivel} style={styles.legendaItem}>
+                    <View style={[styles.legendaCor, { backgroundColor: colors[n.cor] }]} />
+                    <Text style={[type.caption, styles.legendaTexto]}>{n.legenda}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <Text style={[type.label, styles.subsecao]}>Linha do tempo</Text>
+              {eventosDesempenho.length === 0 ? (
+                <Text style={[type.body, styles.subtitle, styles.vazio]}>Nenhuma avaliação registrada ainda.</Text>
               ) : (
-                <View style={styles.list}>
-                  {candidatos.map((item) => (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={[styles.candidatoCard, processando && styles.botaoDesabilitado]}
-                      onPress={() => vincular(item.id)}
-                      disabled={processando}
-                    >
-                      <Text style={type.subtitle}>{item.nome}</Text>
-                      {item.telefone ? <Text style={[type.body, styles.cardSubtitle]}>{item.telefone}</Text> : null}
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                eventosDesempenho.map((item, index) => {
+                  const ultimo = index === eventosDesempenho.length - 1;
+                  const teste = item.tipo === 'teste';
+                  return (
+                    <View key={`${item.tipo}-${item.data}-${index}`} style={styles.linha}>
+                      <View style={styles.trilha}>
+                        <View style={[styles.no, teste ? styles.noTeste : styles.noAvaliacao]} />
+                        {!ultimo ? <View style={styles.conector} /> : null}
+                      </View>
+                      <View style={styles.conteudo}>
+                        <Text style={[type.caption, styles.dataTexto]}>{paraBR(item.data)}</Text>
+                        {item.tipo === 'avaliacao' ? (
+                          <View style={styles.cartao}>
+                            <View style={styles.chipsAvaliacao}>
+                              {item.itens.map((a) => {
+                                const nivelInfo = NIVEIS.find((n) => n.nivel === a.nivel)!;
+                                return (
+                                  <View key={a.id} style={styles.chipAvaliacao}>
+                                    <View
+                                      style={[styles.chipAvaliacaoCor, { backgroundColor: colors[nivelInfo.cor] }]}
+                                    />
+                                    <Text style={[type.caption, styles.chipAvaliacaoTexto]}>
+                                      {nomePorHabilidade[a.habilidade_id] ?? 'Habilidade'}
+                                    </Text>
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          </View>
+                        ) : (
+                          <View style={[styles.cartao, styles.cartaoTeste]}>
+                            <Text style={type.subtitle}>
+                              Módulo {item.teste.modulo_de} → Módulo {item.teste.modulo_para}
+                            </Text>
+                            <Text
+                              style={[type.label, item.teste.aprovado ? styles.badgeAprovado : styles.badgeReprovado]}
+                            >
+                              {item.teste.aprovado ? 'Aprovado' : 'Não aprovado'}
+                            </Text>
+                            {item.teste.observacoes ? (
+                              <Text style={[type.body, styles.cardSubtitle]}>{item.teste.observacoes}</Text>
+                            ) : null}
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })
               )}
             </>
-          )}
+          ) : null}
+
+          <TouchableOpacity
+            style={styles.legadoHeader}
+            onPress={() => setContaAberta((atual) => !atual)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: contaAberta }}
+          >
+            <Text style={[type.label, styles.secao, styles.legadoHeaderTexto]}>Conta de acesso (responsável/aluno)</Text>
+            <Ionicons name={contaAberta ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          {contaAberta ? (
+            perfilVinculado ? (
+              <View style={styles.vinculadoCard}>
+                <Text style={type.subtitle}>{perfilVinculado.nome}</Text>
+                {perfilVinculado.telefone ? (
+                  <Text style={[type.body, styles.cardSubtitle]}>{perfilVinculado.telefone}</Text>
+                ) : null}
+                <TouchableOpacity
+                  style={[styles.desvincularBotao, processando && styles.botaoDesabilitado]}
+                  onPress={confirmarDesvincular}
+                  disabled={processando}
+                >
+                  <Text style={styles.desvincularTexto}>Desvincular</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <Text style={[type.body, styles.subtitle]}>
+                  Nenhuma conta vinculada. Escolha abaixo uma conta que já fez cadastro no app:
+                </Text>
+                {candidatos.length === 0 ? (
+                  <Text style={[type.body, styles.subtitle, styles.vazio]}>
+                    Nenhuma conta aguardando vínculo no momento.
+                  </Text>
+                ) : (
+                  <View style={styles.list}>
+                    {candidatos.map((item) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={[styles.candidatoCard, processando && styles.botaoDesabilitado]}
+                        onPress={() => vincular(item.id)}
+                        disabled={processando}
+                      >
+                        <Text style={type.subtitle}>{item.nome}</Text>
+                        {item.telefone ? <Text style={[type.body, styles.cardSubtitle]}>{item.telefone}</Text> : null}
+                        {item.alunosVinculados.length > 0 ? (
+                          <Text style={[type.caption, styles.candidatoAviso]}>
+                            Já vinculado a: {item.alunosVinculados.join(', ')}
+                          </Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </>
+            )
+          ) : null}
         </ScrollView>
       </View>
       <Footer />
@@ -358,6 +441,17 @@ const styles = StyleSheet.create({
   subtitle: {
     color: colors.textMuted,
     marginTop: spacing.xs,
+  },
+  matriculaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  matriculaToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   atalhosEvolucao: {
     flexDirection: 'row',
@@ -389,6 +483,17 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: spacing.xl,
     marginBottom: spacing.xs,
+  },
+  legadoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: touchTarget,
+    marginTop: spacing.md,
+  },
+  legadoHeaderTexto: {
+    marginTop: 0,
+    marginBottom: 0,
   },
   subsecao: {
     color: colors.textMuted,
@@ -556,5 +661,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     justifyContent: 'center',
+  },
+  candidatoAviso: {
+    color: colors.danger,
+    marginTop: spacing.xs,
   },
 });

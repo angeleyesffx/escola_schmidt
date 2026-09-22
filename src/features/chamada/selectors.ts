@@ -1,4 +1,11 @@
-import type { AulaParticular, AulaRecorrente, AulaTeste, ResponsabilidadeProfessor } from './api';
+import type {
+  AulaParticular,
+  AulaRecorrente,
+  AulaTeste,
+  RegistroPresenca,
+  ResponsabilidadeProfessor,
+  StatusPresenca,
+} from './api';
 import type { EventoCalendario, TipoEvento } from '../eventos/api';
 
 export function agruparAulasPorDiaSemana(gradeSemanal: AulaRecorrente[]): Map<number, AulaRecorrente[]> {
@@ -37,4 +44,23 @@ export function filtrarAulasDoProfessor(
   meusSlots: Set<string>
 ): AulaRecorrente[] {
   return aulas.filter((aula) => !souProfessor || meusSlots.has(aula.id));
+}
+
+export type RegistroLocal = { status: StatusPresenca; registradoEm: string | null };
+
+export type EstadoPresenca = {
+  status: StatusPresenca;
+  label: string;
+  legenda: string;
+  cor: 'present' | 'justified' | 'absent';
+};
+
+export const ESTADOS: EstadoPresenca[] = [
+  { status: 'presente', label: '✓', legenda: 'Presente', cor: 'present' },
+  { status: 'falta_justificada', label: 'J', legenda: 'Falta justificada', cor: 'justified' },
+  { status: 'falta', label: '✕', legenda: 'Falta', cor: 'absent' },
+];
+
+export function presencasParaRegistro(lista: RegistroPresenca[]): Record<string, RegistroLocal> {
+  return Object.fromEntries(lista.map((p) => [p.aluno_id, { status: p.status, registradoEm: p.registrado_em }]));
 }

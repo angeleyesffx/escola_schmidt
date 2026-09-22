@@ -18,3 +18,20 @@ export function confirmar(titulo: string, mensagem: string, textoConfirmar: stri
     { text: textoConfirmar, style: 'destructive', onPress: onConfirmar },
   ]);
 }
+
+// Confirmação padrão pra exclusão permanente (hard delete) — usada pelo
+// ícone de lixeira de RowActions. Nome em inglês por ser código novo desta
+// tarefa; reaproveita `confirmar()` acima, que já existe.
+export function confirmDelete(nomeEntidade: string, onConfirm: () => void) {
+  confirmar(
+    `Excluir ${nomeEntidade}`,
+    `Tem certeza que deseja excluir ${nomeEntidade} permanentemente? Essa ação não pode ser desfeita.`,
+    'Excluir',
+    onConfirm
+  );
+}
+
+// Confirmação padrão ao salvar uma edição feita num FormModal.
+export function confirmSave(onConfirm: () => void) {
+  confirmar('Salvar alterações', 'Tem certeza que deseja salvar essas alterações?', 'Salvar', onConfirm);
+}

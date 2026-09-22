@@ -25,14 +25,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/84</span>
+                <span class='fraction'>0/90</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/69</span>
+                <span class='fraction'>0/77</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/77</span>
+                <span class='fraction'>0/81</span>
             </div>
         
             
@@ -404,7 +404,12 @@
 <a name='L339'></a><a href='#L339'>339</a>
 <a name='L340'></a><a href='#L340'>340</a>
 <a name='L341'></a><a href='#L341'>341</a>
-<a name='L342'></a><a href='#L342'>342</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L342'></a><a href='#L342'>342</a>
+<a name='L343'></a><a href='#L343'>343</a>
+<a name='L344'></a><a href='#L344'>344</a>
+<a name='L345'></a><a href='#L345'>345</a>
+<a name='L346'></a><a href='#L346'>346</a>
+<a name='L347'></a><a href='#L347'>347</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -509,6 +514,7 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -520,12 +526,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -545,6 +549,9 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -552,6 +559,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -566,6 +574,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -745,11 +755,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { useLocalSearchParams, useRouter } from 'expo-router';
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -770,6 +779,7 @@ import {
 } from '../../../src/features/eventos/api';
 import { formatDataISO } from '../../../src/features/chamada/calendar';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
+import { confirmar } from '../../../src/lib/confirmar';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { DateRangePicker } from '../../../src/components/DateRangePicker';
 import { Footer } from '../../../src/components/Footer';
@@ -783,7 +793,7 @@ export default function <span class="fstat-no" title="function not covered" >Nov
   const router = <span class="cstat-no" title="statement not covered" >useRouter();</span>
   const { id } = <span class="cstat-no" title="statement not covered" >useLocalSearchParams&lt;{ id?: string }&gt;();</span>
   const editando = <span class="cstat-no" title="statement not covered" >Boolean(id);</span>
-  const { session } = <span class="cstat-no" title="statement not covered" >useAuth();</span>
+  const { session, meuPapel } = <span class="cstat-no" title="statement not covered" >useAuth();</span>
 &nbsp;
   const [tipos, setTipos] = <span class="cstat-no" title="statement not covered" >useState&lt;TipoEvento[]&gt;([]);</span>
   const [tipoId, setTipoId] = <span class="cstat-no" title="statement not covered" >useState&lt;string | null&gt;(null);</span>
@@ -849,7 +859,8 @@ export default function <span class="fstat-no" title="function not covered" >Nov
       } else {
 <span class="cstat-no" title="statement not covered" >        await criarEvento(tipoId, titulo.trim(), inicioISO, fimISO, descricao.trim() || null, session?.user.id ?? null);</span>
       }
-<span class="cstat-no" title="statement not covered" >      router.back();</span>
+<span class="cstat-no" title="statement not covered" >      if (router.canGoBack()) <span class="cstat-no" title="statement not covered" >router.back();</span></span>
+      else <span class="cstat-no" title="statement not covered" >router.replace('/');</span>
     } catch (err) {
 <span class="cstat-no" title="statement not covered" >      console.error(err);</span>
 <span class="cstat-no" title="statement not covered" >      setError('Erro ao salvar evento. Tente novamente.');</span>
@@ -860,10 +871,7 @@ export default function <span class="fstat-no" title="function not covered" >Nov
 &nbsp;
   function <span class="fstat-no" title="function not covered" >confirmarExclusao(</span>) {
 <span class="cstat-no" title="statement not covered" >    if (!id) <span class="cstat-no" title="statement not covered" >return;</span></span>
-<span class="cstat-no" title="statement not covered" >    Alert.alert('Excluir evento', 'Tem certeza que quer excluir esse evento?', [</span>
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Excluir', style: 'destructive', onPress: excluir },
-    ]);
+<span class="cstat-no" title="statement not covered" >    confirmar('Excluir evento', 'Tem certeza que quer excluir esse evento?', 'Excluir', excluir);</span>
   }
 &nbsp;
   async function <span class="fstat-no" title="function not covered" >excluir(</span>) {
@@ -872,7 +880,8 @@ export default function <span class="fstat-no" title="function not covered" >Nov
 <span class="cstat-no" title="statement not covered" >    setError(null);</span>
 <span class="cstat-no" title="statement not covered" >    try {</span>
 <span class="cstat-no" title="statement not covered" >      await excluirEvento(id);</span>
-<span class="cstat-no" title="statement not covered" >      router.back();</span>
+<span class="cstat-no" title="statement not covered" >      if (router.canGoBack()) <span class="cstat-no" title="statement not covered" >router.back();</span></span>
+      else <span class="cstat-no" title="statement not covered" >router.replace('/');</span>
     } catch (err) {
 <span class="cstat-no" title="statement not covered" >      console.error(err);</span>
 <span class="cstat-no" title="statement not covered" >      setError('Erro ao excluir evento. Tente novamente.');</span>
@@ -881,6 +890,10 @@ export default function <span class="fstat-no" title="function not covered" >Nov
   }
 &nbsp;
   const tituloPagina = <span class="cstat-no" title="statement not covered" >editando ? 'Editar evento' : 'Novo evento';</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  if (meuPapel === 'aluno' || meuPapel === 'responsavel') {</span>
+<span class="cstat-no" title="statement not covered" >    return &lt;Redirect href="/" /&gt;;</span>
+  }
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  if (loading) {</span>
 <span class="cstat-no" title="statement not covered" >    return (</span>
@@ -907,6 +920,8 @@ export default function <span class="fstat-no" title="function not covered" >Nov
                 key={t.id}
                 style={[styles.chip, { borderColor: t.cor }, ativo &amp;&amp; { backgroundColor: t.cor }]}
                 onPress={<span class="fstat-no" title="function not covered" >()</span> =&gt; <span class="cstat-no" title="statement not covered" >setTipoId(t.id)}</span>
+                accessibilityRole="button"
+                accessibilityState={{ selected: ativo }}
               &gt;
                 &lt;View style={[styles.chipCor, { backgroundColor: t.cor }]} /&gt;
                 &lt;Text style={[styles.chipTexto, ativo &amp;&amp; styles.chipTextoAtivo]}&gt;{t.nome}&lt;/Text&gt;
@@ -1093,7 +1108,7 @@ const styles = <span class="cstat-no" title="statement not covered" >StyleSheet.
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-09-19T16:19:19.364Z
+                at 2026-09-21T23:32:11.649Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

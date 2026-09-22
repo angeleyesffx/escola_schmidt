@@ -1,13 +1,15 @@
 import {
   agruparAulasPorDiaSemana,
+  ESTADOS,
   filtrarAulasDoProfessor,
   filtrarEventosNoDia,
   filtrarParticularesNoDia,
   filtrarTestesNoDia,
   montarCorPorTipo,
   montarMeusSlots,
+  presencasParaRegistro,
 } from './selectors';
-import type { AulaParticular, AulaRecorrente, AulaTeste, ResponsabilidadeProfessor } from './api';
+import type { AulaParticular, AulaRecorrente, AulaTeste, RegistroPresenca, ResponsabilidadeProfessor } from './api';
 import type { EventoCalendario, TipoEvento } from '../eventos/api';
 
 describe('agruparAulasPorDiaSemana', () => {
@@ -113,5 +115,31 @@ describe('filtrarAulasDoProfessor', () => {
     const meusSlots = new Set(['ar1']);
     const resultado = filtrarAulasDoProfessor(aulas, true, meusSlots);
     expect(resultado.map((a) => a.id)).toEqual(['ar1']);
+  });
+});
+
+describe('ESTADOS', () => {
+  it('define exatamente os três estados de presença, na ordem presente/falta_justificada/falta', () => {
+    expect(ESTADOS.map((e) => e.status)).toEqual(['presente', 'falta_justificada', 'falta']);
+  });
+});
+
+describe('presencasParaRegistro', () => {
+  it('retorna registro vazio para lista vazia', () => {
+    expect(presencasParaRegistro([])).toEqual({});
+  });
+
+  it('chaveia o registro por aluno_id', () => {
+    const lista: RegistroPresenca[] = [
+      { aluno_id: 'al1', status: 'presente', registrado_em: '2026-09-20T10:00:00.000Z' },
+      { aluno_id: 'al2', status: 'falta', registrado_em: '2026-09-20T10:05:00.000Z' },
+    ];
+
+    const resultado = presencasParaRegistro(lista);
+
+    expect(resultado).toEqual({
+      al1: { status: 'presente', registradoEm: '2026-09-20T10:00:00.000Z' },
+      al2: { status: 'falta', registradoEm: '2026-09-20T10:05:00.000Z' },
+    });
   });
 });

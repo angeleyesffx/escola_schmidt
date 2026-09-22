@@ -4,7 +4,7 @@ import * as Linking from 'expo-linking';
 import { AppState, Platform, View } from 'react-native';
 
 import { supabase } from '../../lib/supabase';
-import { definirLembrarLogin } from '../../lib/rememberMeStorage';
+import { definirLembrarLogin, salvarUltimoEmailLembrado } from '../../lib/rememberMeStorage';
 
 // Tablet na recepção fica logado o dia inteiro sem ninguém tocar — 30 min
 // parado desloga sozinho, tanto com o app aberto (sem toque na tela) quanto
@@ -24,10 +24,41 @@ export type MeuAluno = {
   responsavel_telefone: string | null;
 };
 
+// Vínculo criado por e-mail (0020/0033) mas ainda não confirmado por quem
+// recebeu (0037) — só id/nome, o mínimo pra perguntar "você é responsável
+// por [nome]?" sem expor o resto da ficha antes da confirmação.
+export type VinculoPendente = {
+  id: string;
+  nome: string;
+};
+
 type AuthContextValue = {
   session: Session | null;
   meuPapel: Papel | null;
-  meuAluno: MeuAluno | null;
+  // Lista, não objeto único: uma conta pode estar vinculada a mais de um
+  // aluno (responsável por vários filhos, ou aluno adulto que também é
+  // responsável por outro filho — supabase/migrations/0033). A maioria das
+  // telas trata o caso comum (0 ou 1) sem UI extra e só mostra um seletor
+  // quando `meusAlunos.length > 1`.
+  meusAlunos: MeuAluno[];
+  // Distingue "ainda buscando" de "buscou e não achou vínculo nenhum" — sem
+  // isso, uma tela que faz `if (meusAlunos.length === 0) <spinner>` nunca sai
+  // do carregando pra quem se cadastrou mas ainda não foi vinculado a um
+  // aluno (loading infinito).
+  meusAlunosCarregado: boolean;
+  // Vínculos por e-mail que ainda esperam confirmação (0037) — app/(app)/
+  // _layout.tsx redireciona pra tela de confirmação enquanto essa lista não
+  // estiver vazia.
+  vinculosPendentes: VinculoPendente[];
+  vinculosPendentesCarregado: boolean;
+  confirmarVinculo: (alunoId: string) => Promise<{ error: string | null }>;
+  recusarVinculo: (alunoId: string) => Promise<{ error: string | null }>;
+  // Adiciona um filho à própria conta a qualquer momento (não só no
+  // cadastro) — supabase/migrations/0038/0039. Vínculo nasce confirmado (é a
+  // própria conta se auto-vinculando ao nome que ela mesma digitou).
+  // dataNascimento em formato ISO (AAAA-MM-DD) — obrigatória (0039): faixa
+  // etária decide categoria de competição, não só módulo.
+  adicionarFilho: (nome: string, dataNascimento: string) => Promise<{ error: string | null }>;
   loading: boolean;
   signIn: (email: string, password: string, lembrar?: boolean) => Promise<{ error: string | null }>;
   signUp: (
@@ -35,7 +66,13 @@ type AuthContextValue = {
     email: string,
     password: string,
     titular: Titular,
-    consentimentoVersao: string
+    consentimentoVersao: string,
+    // Só relevante quando titular === 'responsavel'; nome e dataNascimento já
+    // devem chegar validados (sem espaço nas pontas, sem entradas vazias,
+    // data ISO) — signup.tsx filtra antes de chamar (mesma convenção de
+    // `nome.trim()` já usada aqui). Opcional: quem preferir cadastra os
+    // filhos depois, via adicionarFilho.
+    filhos?: { nome: string; dataNascimento: string }[]
   ) => Promise<{ error: string | null }>;
   requestPasswordReset: (email: string) => Promise<{ error: string | null }>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ error: string | null }>;
@@ -66,8 +103,27 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
   const [meuPapel, setMeuPapel] = useState<Papel | null>(null);
-  const [meuAluno, setMeuAluno] = useState<MeuAluno | null>(null);
+  const [meusAlunos, setMeusAlunos] = useState<MeuAluno[]>([]);
+  const [meusAlunosCarregado, setMeusAlunosCarregado] = useState(false);
+  const [vinculosPendentes, setVinculosPendentes] = useState<VinculoPendente[]>([]);
+  const [vinculosPendentesCarregado, setVinculosPendentesCarregado] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  const buscarVinculosPendentes = useCallback(async () => {
+    if (!session?.user.id) {
+      setVinculosPendentes([]);
+      setVinculosPendentesCarregado(true);
+      return;
+    }
+    const { data, error } = await supabase.rpc('meus_vinculos_pendentes');
+    if (error) {
+      console.error(error);
+      setVinculosPendentes([]);
+    } else {
+      setVinculosPendentes((data ?? []) as VinculoPendente[]);
+    }
+    setVinculosPendentesCarregado(true);
+  }, [session?.user.id]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -133,32 +189,73 @@ export function AuthProvider({ children }: PropsWithChildren) {
     };
   }, [session?.user.id]);
 
-  // Alimenta a tela "Meu perfil" e as travas de autocheckin (data/módulo da
-  // própria aula) — só existe pra quem é aluno e já foi vinculado a um registro.
-  useEffect(() => {
-    if ((meuPapel !== 'aluno' && meuPapel !== 'responsavel') || !session?.user.id) {
-      setMeuAluno(null);
+  // Alimenta a tela "Meu perfil", as travas de autocheckin e o card de
+  // evolução na Home — busca por vínculo (`perfil_id`), não por papel: desde
+  // 0033, uma conta de qualquer papel pode ter 0, 1 ou vários alunos
+  // vinculados (o próprio treino da pessoa, e/ou os filhos dela). Desde
+  // 0037, a RLS só devolve os já confirmados — um vínculo pendente não
+  // aparece aqui até passar por confirmarVinculo.
+  const buscarMeusAlunos = useCallback(async () => {
+    if (!session?.user.id) {
+      setMeusAlunos([]);
+      setMeusAlunosCarregado(true);
       return;
     }
-    let ativo = true;
-    supabase
+    setMeusAlunosCarregado(false);
+    const { data, error } = await supabase
       .from('alunos')
       .select('id, nome, modulo, data_nascimento, responsavel_nome, responsavel_telefone')
       .eq('perfil_id', session.user.id)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (!ativo) return;
-        if (error) {
-          console.error(error);
-          setMeuAluno(null);
-          return;
-        }
-        setMeuAluno(data as MeuAluno | null);
-      });
-    return () => {
-      ativo = false;
-    };
-  }, [meuPapel, session?.user.id]);
+      .order('nome');
+    if (error) {
+      console.error(error);
+      setMeusAlunos([]);
+    } else {
+      setMeusAlunos((data ?? []) as MeuAluno[]);
+    }
+    setMeusAlunosCarregado(true);
+  }, [session?.user.id]);
+
+  useEffect(() => {
+    void buscarMeusAlunos();
+  }, [buscarMeusAlunos]);
+
+  useEffect(() => {
+    void buscarVinculosPendentes();
+  }, [buscarVinculosPendentes]);
+
+  // Chamadas pela tela de confirmação de vínculo (0037): depois de
+  // confirmar/recusar, atualiza as duas listas — o aluno sai de
+  // vinculosPendentes e, se confirmado, passa a aparecer em meusAlunos.
+  async function confirmarVinculo(alunoId: string) {
+    const { error } = await supabase.rpc('confirmar_meu_vinculo', { p_aluno_id: alunoId });
+    if (error) {
+      return { error: error.message };
+    }
+    await Promise.all([buscarVinculosPendentes(), buscarMeusAlunos()]);
+    return { error: null };
+  }
+
+  async function recusarVinculo(alunoId: string) {
+    const { error } = await supabase.rpc('recusar_meu_vinculo', { p_aluno_id: alunoId });
+    if (error) {
+      return { error: error.message };
+    }
+    await buscarVinculosPendentes();
+    return { error: null };
+  }
+
+  async function adicionarFilho(nome: string, dataNascimento: string) {
+    const { error } = await supabase.rpc('adicionar_meu_filho', {
+      p_nome: nome,
+      p_data_nascimento: dataNascimento,
+    });
+    if (error) {
+      return { error: error.message };
+    }
+    await buscarMeusAlunos();
+    return { error: null };
+  }
 
   async function signIn(email: string, password: string, lembrar = true) {
     // Precisa ser setado antes do signInWithPassword: é a gravação da sessão
@@ -171,7 +268,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     // Credenciais corretas não bastam: se o dono desativou essa conta
     // (supabase/migrations/0017), barra aqui em vez de deixar entrar e só
-    // derrubar depois no próximo tick do polling de inatividade.
+    // derrubar depois no próximo tick do polling de inatividade. Falha
+    // fechado: se essa checagem não puder ser confirmada (erro de rede logo
+    // após autenticar), não deixamos passar só porque a query falhou — uma
+    // instabilidade transitória não pode virar bypass do bloqueio.
     const usuarioId = data?.user?.id;
     if (usuarioId) {
       const { data: perfil, error: perfilError } = await supabase
@@ -179,11 +279,20 @@ export function AuthProvider({ children }: PropsWithChildren) {
         .select('ativo')
         .eq('id', usuarioId)
         .single();
-      if (!perfilError && perfil && !perfil.ativo) {
+      if (perfilError) {
+        await signOut();
+        return { error: 'Não foi possível confirmar sua conta agora. Tente novamente em instantes.' };
+      }
+      if (perfil && !perfil.ativo) {
         await signOut();
         return { error: 'Sua conta foi desativada. Fale com a administração da escola.' };
       }
     }
+
+    // Só grava o "lembrar-me" depois de confirmar que a conta está ativa —
+    // senão, numa conta desativada, o e-mail dela fica pré-preenchido no
+    // próximo login de outra pessoa no mesmo tablet compartilhado.
+    await salvarUltimoEmailLembrado(email, lembrar);
 
     return { error: null };
   }
@@ -196,16 +305,24 @@ export function AuthProvider({ children }: PropsWithChildren) {
     email: string,
     password: string,
     titular: Titular,
-    consentimentoVersao: string
+    consentimentoVersao: string,
+    filhos: { nome: string; dataNascimento: string }[] = []
   ) {
     try {
-      // titular e consentimento_versao viram raw_user_meta_data e são lidos
-      // por cria_perfil_novo_usuario() (0023) na mesma transação que cria a
-      // linha em perfis — não existe um segundo passo de "salvar depois".
+      // titular, consentimento_versao e filhos viram raw_user_meta_data e são
+      // lidos por cria_perfil_novo_usuario() (0038/0039) na mesma transação
+      // que cria a linha em perfis — não existe um segundo passo de "salvar
+      // depois". `filhos` só entra no payload quando não vazio, pra não mudar
+      // o formato de metadata de quem não usa esse caminho. Chave em
+      // snake_case (data_nascimento) porque é isso que a trigger em SQL lê.
+      const data: Record<string, unknown> = { nome, titular, consentimento_versao: consentimentoVersao };
+      if (filhos.length > 0) {
+        data.filhos = filhos.map((f) => ({ nome: f.nome, data_nascimento: f.dataNascimento }));
+      }
       const { error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { nome, titular, consentimento_versao: consentimentoVersao } },
+        options: { data },
       });
       if (error) {
         return { error: ERRO_GENERICO_CADASTRO };
@@ -314,7 +431,23 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   return (
     <AuthContext.Provider
-      value={{ session, meuPapel, meuAluno, loading, signIn, signUp, requestPasswordReset, changePassword, signOut }}
+      value={{
+        session,
+        meuPapel,
+        meusAlunos,
+        meusAlunosCarregado,
+        vinculosPendentes,
+        vinculosPendentesCarregado,
+        confirmarVinculo,
+        recusarVinculo,
+        adicionarFilho,
+        loading,
+        signIn,
+        signUp,
+        requestPasswordReset,
+        changePassword,
+        signOut,
+      }}
     >
       <View
         style={{ flex: 1 }}

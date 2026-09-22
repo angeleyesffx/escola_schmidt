@@ -1,5 +1,5 @@
 import { Redirect, useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -13,7 +13,9 @@ import {
 } from 'react-native';
 
 import { convidarAluno, criarAluno, type Plano } from '../../../src/features/alunos/api';
+import { getModulosAtivos, type Modulo } from '../../../src/features/chamada/api';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
+import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
 import { Chip } from '../../../src/components/Chip';
@@ -23,7 +25,6 @@ import { colors, radius, spacing, touchTarget, type } from '../../../src/constan
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const MODULOS = [1, 2, 3, 4] as const;
 const PLANOS: { valor: Plano; label: string; meses: number }[] = [
   { valor: 'mensal', label: 'Mensal', meses: 1 },
   { valor: 'trimestral', label: 'Trimestral', meses: 3 },
@@ -43,9 +44,20 @@ export default function NovoAluno() {
   const router = useRouter();
   const { meuPapel } = useAuth();
 
+  const { data: dadosModulos } = useAsyncData<Modulo[]>(getModulosAtivos, []);
+  const modulos = dadosModulos ?? [];
+
   const [nome, setNome] = useState('');
   const [dataNascimento, setDataNascimento] = useState('');
-  const [modulo, setModulo] = useState<number>(1);
+  const [modulo, setModulo] = useState<number | null>(null);
+
+  // Assim que os módulos carregam, seleciona o primeiro por padrão — sem
+  // isso o formulário abriria sem nenhum módulo marcado.
+  useEffect(() => {
+    if (modulo === null && modulos.length > 0) {
+      setModulo(modulos[0].numero);
+    }
+  }, [modulo, modulos]);
   const [responsavelNome, setResponsavelNome] = useState('');
   const [responsavelTelefone, setResponsavelTelefone] = useState('');
   const [emailAcesso, setEmailAcesso] = useState('');
@@ -105,9 +117,14 @@ export default function NovoAluno() {
       return;
     }
 
-    const nascimentoISO = dataNascimento.trim() ? paraISO(dataNascimento) : null;
-    if (dataNascimento.trim() && !nascimentoISO) {
-      setError('Data de nascimento deve estar no formato DD/MM/AAAA.');
+    const nascimentoISO = paraISO(dataNascimento);
+    if (!nascimentoISO) {
+      setError('Informe a data de nascimento.');
+      return;
+    }
+
+    if (modulo === null) {
+      setError('Escolha o módulo.');
       return;
     }
 
@@ -172,7 +189,7 @@ export default function NovoAluno() {
         <Text style={[type.label, styles.rotulo]}>Nome</Text>
         <TextInput style={styles.input} value={nome} onChangeText={setNome} placeholder="Nome completo" />
 
-        <Text style={[type.label, styles.rotulo]}>Data de nascimento (opcional)</Text>
+        <Text style={[type.label, styles.rotulo]}>Data de nascimento</Text>
         <TouchableOpacity
           style={styles.dataBotao}
           onPress={() => setCampoDataAberto(campoDataAberto === 'nascimento' ? null : 'nascimento')}
@@ -193,8 +210,8 @@ export default function NovoAluno() {
 
         <Text style={[type.label, styles.rotulo]}>Módulo</Text>
         <View style={styles.chips}>
-          {MODULOS.map((m) => (
-            <Chip key={m} label={m} active={modulo === m} onPress={() => setModulo(m)} square />
+          {modulos.map((m) => (
+            <Chip key={m.numero} label={m.nome} active={modulo === m.numero} onPress={() => setModulo(m.numero)} square />
           ))}
         </View>
 

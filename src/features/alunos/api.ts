@@ -20,6 +20,12 @@ export type PerfilAluno = {
   nome: string;
   telefone: string | null;
   criado_em: string;
+  // Nomes dos alunos que essa conta já tem vinculados — mostrado na lista de
+  // candidatos pra equipe não vincular por engano um responsável de outra
+  // família só porque a conta apareceu na lista (achado real: aconteceu com
+  // uma conta de teste vinculada a 3 filhos que também foi clicada na ficha
+  // de um aluno sem nenhuma relação).
+  alunosVinculados: string[];
 };
 
 export type NovoAluno = {
@@ -75,20 +81,35 @@ export async function getPerfilVinculado(perfilId: string) {
 
 // Conta de responsável/aluno com papel 'aluno' que já fez cadastro (signup
 // público) mas ainda não foi ligada a nenhum registro da lista de alunos.
+// Desde que uma conta pode ter mais de um aluno vinculado (supabase/migrations/
+// 0033 — responsável por vários filhos, ou aluno adulto que também é
+// responsável por outro), não faz mais sentido excluir quem já tem algum
+// vínculo: essa mesma conta pode precisar ser ligada a um segundo filho.
+// Também inclui `responsavel` (não só `aluno`), já que o vínculo automático
+// por e-mail (0020/0030) promove pra esse papel assim que liga o primeiro filho.
 export async function getPerfisNaoVinculados() {
-  const [{ data: perfis, error: erroPerfis }, { data: alunos, error: erroAlunos }] = await Promise.all([
+  const [{ data: perfis, error: erroPerfis }, { data: vinculos, error: erroVinculos }] = await Promise.all([
     supabase
       .from('perfis')
       .select('id, nome, telefone, criado_em')
-      .eq('papel', 'aluno')
+      .in('papel', ['aluno', 'responsavel'])
       .order('criado_em', { ascending: false }),
-    supabase.from('alunos').select('perfil_id').not('perfil_id', 'is', null),
+    supabase.from('alunos').select('perfil_id, nome').not('perfil_id', 'is', null),
   ]);
   if (erroPerfis) throw erroPerfis;
-  if (erroAlunos) throw erroAlunos;
+  if (erroVinculos) throw erroVinculos;
 
-  const vinculados = new Set((alunos ?? []).map((a) => a.perfil_id));
-  return ((perfis ?? []) as PerfilAluno[]).filter((p) => !vinculados.has(p.id));
+  const nomesPorPerfil = new Map<string, string[]>();
+  for (const vinculo of vinculos ?? []) {
+    const lista = nomesPorPerfil.get(vinculo.perfil_id as string) ?? [];
+    lista.push(vinculo.nome);
+    nomesPorPerfil.set(vinculo.perfil_id as string, lista);
+  }
+
+  return (perfis ?? []).map((perfil) => ({
+    ...perfil,
+    alunosVinculados: nomesPorPerfil.get(perfil.id) ?? [],
+  })) as PerfilAluno[];
 }
 
 export async function vincularPerfil(alunoId: string, perfilId: string) {
@@ -207,5 +228,13 @@ export async function atualizarDadosAluno(alunoId: string, dados: DadosAluno) {
     p_responsavel_nome: dados.responsavel_nome,
     p_responsavel_telefone: dados.responsavel_telefone,
   });
+  if (error) throw error;
+}
+
+// Matrícula ativa/inativa (soft delete) — decisão da equipe, igual módulo e
+// plano, por isso fica de fora da RPC de self-service acima e escreve direto
+// em `alunos` (RLS já é dono-only pra escrita direta na tabela).
+export async function atualizarAtivoAluno(alunoId: string, ativo: boolean) {
+  const { error } = await supabase.from('alunos').update({ ativo }).eq('id', alunoId);
   if (error) throw error;
 }

@@ -2,7 +2,9 @@
 export const uiAssets = {
   icon: {
     notificacoes: require('../../assets/icon-notificacoes.png'),
-    mensagens: require('../../assets/icon-mensagens.png'),
+    announcements: require('../../assets/icon-announces.png'),
+    edit: require('../../assets/icon-edit.png'),
+    trash: require('../../assets/icon-trashcan.png'),
   },
   /** Ilustrações largas (proporção ~3,5:1) para faixas de destaque no topo/rodapé das telas. */
   banner: {

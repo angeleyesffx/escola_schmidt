@@ -80,7 +80,8 @@ function montarJornada(historico: HistoricoNivelEvolucao[], avaliacoes: Avaliaca
 
 export default function JornadaAluno() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { meuPapel, meuAluno } = useAuth();
+  const { meuPapel, meusAlunos, meusAlunosCarregado } = useAuth();
+  const souAlunoOuResponsavel = meuPapel === 'aluno' || meuPapel === 'responsavel';
 
   const [aluno, setAluno] = useState<Aluno | null>(null);
   const [historico, setHistorico] = useState<HistoricoNivelEvolucao[]>([]);
@@ -114,15 +115,31 @@ export default function JornadaAluno() {
     }, [carregar])
   );
 
-  if (meuPapel === 'aluno' || meuPapel === 'responsavel') {
-    if (!meuAluno) {
+  if (souAlunoOuResponsavel && !meusAlunosCarregado) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (souAlunoOuResponsavel) {
+    if (meusAlunos.length === 0) {
       return (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
+        <>
+          <PageHeader titulo="Jornada" />
+          <View style={styles.center}>
+            <Text style={[type.body, styles.subtitle]}>
+              Seu cadastro ainda não foi vinculado a um aluno. Fale com a escola.
+            </Text>
+          </View>
+          <Footer />
+        </>
       );
     }
-    if (meuAluno.id !== id) {
+    // Vários filhos vinculados: acesso é por vínculo com ESTE id da URL, não
+    // "sou aluno/responsavel" sozinho.
+    if (!meusAlunos.some((a) => a.id === id)) {
       return <Redirect href="/" />;
     }
   }

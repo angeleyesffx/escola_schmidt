@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 
 import { useAuth } from '../../src/features/auth/AuthProvider';
+import { lerUltimoEmailLembrado } from '../../src/lib/rememberMeStorage';
 import { PageHeader } from '../../src/components/PageHeader';
 import { PasswordInput } from '../../src/components/PasswordInput';
 import { colors, radius, spacing, touchTarget, type } from '../../src/constants/theme';
@@ -38,6 +39,19 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false);
 
   const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+  // Pré-preenche com o e-mail do último login com "lembrar de mim" marcado —
+  // sem isso, o checkbox só mantinha a sessão, não a conveniência de digitar
+  // o e-mail de novo.
+  useEffect(() => {
+    let ativo = true;
+    lerUltimoEmailLembrado().then((ultimoEmail) => {
+      if (ativo && ultimoEmail) setEmail(ultimoEmail);
+    });
+    return () => {
+      ativo = false;
+    };
+  }, []);
 
   async function handleSubmit() {
     setError(null);
@@ -107,6 +121,8 @@ export default function Login() {
             testID="login-checkbox-lembrar"
             style={styles.lembrarLinha}
             onPress={() => setLembrar((atual) => !atual)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: lembrar }}
           >
             <View style={[styles.checkbox, lembrar && styles.checkboxMarcado]}>
               {lembrar ? <Text style={styles.checkboxMarca}>✓</Text> : null}

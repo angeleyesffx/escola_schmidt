@@ -21,6 +21,7 @@ import { PageHeader } from '../../src/components/PageHeader';
 import { PersonIcon } from '../../src/components/PersonIcon';
 import { PasswordInput } from '../../src/components/PasswordInput';
 import { DateRangePicker } from '../../src/components/DateRangePicker';
+import { SeletorAluno } from '../../src/components/SeletorAluno';
 import { Footer } from '../../src/components/Footer';
 import { colors, fonts, radius, spacing, touchTarget, type } from '../../src/constants/theme';
 
@@ -38,9 +39,23 @@ const REGRAS_SENHA: { chave: string; label: string; cumprida: (senha: string) =>
 ];
 
 export default function Perfil() {
-  const { session, meuPapel, meuAluno, changePassword } = useAuth();
+  const { session, meuPapel, meusAlunos, changePassword, adicionarFilho } = useAuth();
   const router = useRouter();
   const souAluno = (meuPapel === 'aluno' || meuPapel === 'responsavel');
+  // Papel e vínculo são independentes (docs/product/professor-como-aluno.md):
+  // um dono/professor que também tem filho matriculado vê as mesmas seções
+  // de aluno que qualquer outra conta com vínculo, sem perder as de equipe.
+  const podeVerSecaoAluno = souAluno || meusAlunos.length > 0;
+  // Uma conta pode ter vários alunos vinculados (responsável por mais de um
+  // filho, ou aluno adulto que também é responsável por outro) — as seções
+  // abaixo sempre editam/mostram só 1 de cada vez; este é o escolhido.
+  const [alunoSelecionadoId, setAlunoSelecionadoId] = useState<string | null>(null);
+  const [nomeNovoFilho, setNomeNovoFilho] = useState('');
+  const [dataNascimentoNovoFilho, setDataNascimentoNovoFilho] = useState('');
+  const [pickerNovoFilhoAberto, setPickerNovoFilhoAberto] = useState(false);
+  const [adicionandoFilho, setAdicionandoFilho] = useState(false);
+  const [erroNovoFilho, setErroNovoFilho] = useState<string | null>(null);
+  const [sucessoNovoFilho, setSucessoNovoFilho] = useState<string | null>(null);
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -80,13 +95,23 @@ export default function Perfil() {
     setTelefone(meuPerfil.telefone ?? '');
   }, [meuPerfil]);
 
+  // Mantém a seleção se o aluno escolhido continuar na lista; senão cai pro
+  // primeiro (cobre o load inicial e o caso comum de 0 ou 1 aluno vinculado).
   useEffect(() => {
-    if (!meuAluno) return;
-    setNomeAluno(meuAluno.nome);
-    setDataNascimentoAluno(meuAluno.data_nascimento ? paraBR(meuAluno.data_nascimento) : '');
-    setResponsavelNomeAluno(meuAluno.responsavel_nome ?? '');
-    setResponsavelTelefoneAluno(meuAluno.responsavel_telefone ?? '');
-  }, [meuAluno]);
+    setAlunoSelecionadoId((atual) =>
+      atual && meusAlunos.some((a) => a.id === atual) ? atual : (meusAlunos[0]?.id ?? null)
+    );
+  }, [meusAlunos]);
+
+  const alunoSelecionado = meusAlunos.find((a) => a.id === alunoSelecionadoId) ?? null;
+
+  useEffect(() => {
+    if (!alunoSelecionado) return;
+    setNomeAluno(alunoSelecionado.nome);
+    setDataNascimentoAluno(alunoSelecionado.data_nascimento ? paraBR(alunoSelecionado.data_nascimento) : '');
+    setResponsavelNomeAluno(alunoSelecionado.responsavel_nome ?? '');
+    setResponsavelTelefoneAluno(alunoSelecionado.responsavel_telefone ?? '');
+  }, [alunoSelecionado]);
 
   function selecionarDataNascimentoAluno(iso: string) {
     setDataNascimentoAluno(paraBR(iso));
@@ -95,14 +120,14 @@ export default function Perfil() {
   }
 
   async function salvarDadosAluno() {
-    if (!meuAluno) return;
+    if (!alunoSelecionado) return;
     if (!nomeAluno.trim()) {
       setErroAluno('Informe o nome do aluno.');
       return;
     }
-    const nascimentoISO = dataNascimentoAluno.trim() ? paraISO(dataNascimentoAluno) : null;
-    if (dataNascimentoAluno.trim() && !nascimentoISO) {
-      setErroAluno('Data de nascimento deve estar no formato DD/MM/AAAA.');
+    const nascimentoISO = paraISO(dataNascimentoAluno);
+    if (!nascimentoISO) {
+      setErroAluno('Informe a data de nascimento.');
       return;
     }
 
@@ -110,7 +135,7 @@ export default function Perfil() {
     setSucessoAluno(null);
     setSalvandoAluno(true);
     try {
-      await atualizarDadosAluno(meuAluno.id, {
+      await atualizarDadosAluno(alunoSelecionado.id, {
         nome: nomeAluno.trim(),
         data_nascimento: nascimentoISO,
         responsavel_nome: responsavelNomeAluno.trim() || null,
@@ -123,6 +148,32 @@ export default function Perfil() {
     } finally {
       setSalvandoAluno(false);
     }
+  }
+
+  async function adicionarNovoFilho() {
+    if (!nomeNovoFilho.trim()) {
+      setErroNovoFilho('Informe o nome do filho.');
+      return;
+    }
+    const nascimentoISO = paraISO(dataNascimentoNovoFilho);
+    if (!nascimentoISO) {
+      setErroNovoFilho('Informe a data de nascimento.');
+      return;
+    }
+
+    setErroNovoFilho(null);
+    setSucessoNovoFilho(null);
+    setAdicionandoFilho(true);
+    const { error } = await adicionarFilho(nomeNovoFilho.trim(), nascimentoISO);
+    setAdicionandoFilho(false);
+
+    if (error) {
+      setErroNovoFilho('Erro ao adicionar filho. Tente novamente.');
+      return;
+    }
+    setNomeNovoFilho('');
+    setDataNascimentoNovoFilho('');
+    setSucessoNovoFilho('Filho(a) adicionado(a) com sucesso.');
   }
 
   async function salvarPerfil() {
@@ -201,7 +252,7 @@ export default function Perfil() {
           <View style={styles.card}>
             <View style={styles.resumoTopo}>
               <View style={styles.resumoTextoWrap}>
-                <Text style={type.title}>{nome || meuAluno?.nome || session?.user.email}</Text>
+                <Text style={type.title}>{nome || meusAlunos[0]?.nome || session?.user.email}</Text>
                 <Text style={[type.body, styles.subtitle]}>{meuPapel ? ROTULO_PAPEL[meuPapel] ?? meuPapel : ''}</Text>
                 {session?.user.email ? <Text style={[type.body, styles.subtitle]}>{session.user.email}</Text> : null}
               </View>
@@ -320,9 +371,76 @@ export default function Perfil() {
             </TouchableOpacity>
           </View>
 
-          {souAluno && meuAluno ? (
+          <View style={styles.card}>
+            <Text style={type.subtitle}>Adicionar filho(a)</Text>
+            <Text style={[type.body, styles.subtitle]}>
+              Cadastre aqui cada filho matriculado na escola — o vínculo é imediato, sem precisar da equipe.
+            </Text>
+
+            <Text style={[type.label, styles.rotulo]}>Nome do filho(a)</Text>
+            <TextInput
+              testID="perfil-novo-filho-nome"
+              style={styles.input}
+              value={nomeNovoFilho}
+              onChangeText={(texto) => {
+                setNomeNovoFilho(texto);
+                if (sucessoNovoFilho) setSucessoNovoFilho(null);
+              }}
+              placeholder="Nome completo"
+              autoCapitalize="words"
+            />
+
+            <Text style={[type.label, styles.rotulo]}>Data de nascimento</Text>
+            <TouchableOpacity
+              testID="perfil-novo-filho-data"
+              style={styles.dataBotao}
+              onPress={() => setPickerNovoFilhoAberto((atual) => !atual)}
+            >
+              <Text style={dataNascimentoNovoFilho ? styles.dataBotaoTexto : styles.dataBotaoPlaceholder}>
+                {dataNascimentoNovoFilho || 'Selecionar data'}
+              </Text>
+            </TouchableOpacity>
+            {pickerNovoFilhoAberto ? (
+              <DateRangePicker
+                apenasUmDia
+                inicioISO={paraISO(dataNascimentoNovoFilho) ?? paraISO(hojeBR())!}
+                fimISO={paraISO(dataNascimentoNovoFilho) ?? paraISO(hojeBR())!}
+                onConfirmar={(iso) => {
+                  setDataNascimentoNovoFilho(paraBR(iso));
+                  if (sucessoNovoFilho) setSucessoNovoFilho(null);
+                  setPickerNovoFilhoAberto(false);
+                }}
+                onFechar={() => setPickerNovoFilhoAberto(false)}
+              />
+            ) : null}
+
+            {erroNovoFilho ? <Text style={[type.body, styles.error]}>{erroNovoFilho}</Text> : null}
+            {sucessoNovoFilho ? <Text style={[type.body, styles.sucesso]}>{sucessoNovoFilho}</Text> : null}
+
+            <TouchableOpacity
+              testID="perfil-novo-filho-adicionar"
+              style={[styles.botaoPrimario, adicionandoFilho && styles.botaoPrimarioDesabilitado]}
+              onPress={adicionarNovoFilho}
+              disabled={adicionandoFilho}
+            >
+              {adicionandoFilho ? (
+                <ActivityIndicator color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.botaoPrimarioTexto}>Adicionar filho(a)</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {podeVerSecaoAluno && alunoSelecionado ? (
             <View style={styles.card}>
               <Text style={type.subtitle}>Dados do aluno</Text>
+
+              <SeletorAluno
+                alunos={meusAlunos}
+                selecionadoId={alunoSelecionadoId}
+                onSelecionar={setAlunoSelecionadoId}
+                rotulo="Qual aluno"
+              />
 
               <Text style={[type.label, styles.rotulo]}>Nome do aluno</Text>
               <TextInput
@@ -336,7 +454,7 @@ export default function Perfil() {
                 autoCapitalize="words"
               />
 
-              <Text style={[type.label, styles.rotulo]}>Data de nascimento (opcional)</Text>
+              <Text style={[type.label, styles.rotulo]}>Data de nascimento</Text>
               <TouchableOpacity style={styles.dataBotao} onPress={() => setPickerNascimentoAberto((atual) => !atual)}>
                 <Text style={dataNascimentoAluno ? styles.dataBotaoTexto : styles.dataBotaoPlaceholder}>
                   {dataNascimentoAluno || 'Selecionar data'}
@@ -390,20 +508,20 @@ export default function Perfil() {
             </View>
           ) : null}
 
-          {souAluno ? (
-            meuAluno ? (
+          {podeVerSecaoAluno ? (
+            alunoSelecionado ? (
               <View style={styles.card}>
-                <Text style={type.subtitle}>Módulo {meuAluno.modulo}</Text>
+                <Text style={type.subtitle}>Módulo {alunoSelecionado.modulo}</Text>
                 <View style={styles.botoes}>
                   <TouchableOpacity
                     style={styles.botao}
-                    onPress={() => router.push(`/alunos/${meuAluno.id}/frequencia`)}
+                    onPress={() => router.push(`/alunos/${alunoSelecionado.id}/frequencia`)}
                   >
                     <Text style={styles.botaoTexto}>Frequência</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.botao}
-                    onPress={() => router.push(`/alunos/${meuAluno.id}/evolucao`)}
+                    onPress={() => router.push(`/alunos/${alunoSelecionado.id}/evolucao`)}
                   >
                     <Text style={styles.botaoTexto}>Minha Evolução</Text>
                   </TouchableOpacity>

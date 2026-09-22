@@ -1,29 +1,27 @@
 import { Redirect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import {
   adicionarRequisitoNivel,
   atualizarCategoria,
   atualizarHabilidade,
   atualizarModalidade,
+  atualizarRequisitoNivel,
   criarCategoria,
   criarHabilidade,
   criarModalidade,
+  excluirCategoria,
+  excluirHabilidade,
+  excluirModalidade,
   getCategoriasCatalogo,
   getHabilidadesCatalogo,
   getMetodologiasAtivas,
   getModalidadesEvolucao,
   getRequisitosNivelAdmin,
+  getUsoCategoria,
+  getUsoHabilidade,
+  getUsoModalidade,
   removerRequisitoNivel,
 } from '../../src/features/evolucao/api';
 import type {
@@ -36,15 +34,24 @@ import type {
 } from '../../src/features/evolucao/types';
 import { useAuth } from '../../src/features/auth/AuthProvider';
 import { useAsyncData } from '../../src/hooks/useAsyncData';
+import { confirmDelete, confirmSave } from '../../src/lib/confirmar';
 import { PageHeader } from '../../src/components/PageHeader';
 import { Footer } from '../../src/components/Footer';
 import { Dropdown } from '../../src/components/Dropdown';
+import { FormModal } from '../../src/components/FormModal';
+import { RowActions } from '../../src/components/RowActions';
+import { ToggleAtivo } from '../../src/components/ToggleAtivo';
 import { colors, radius, spacing, touchTarget, type } from '../../src/constants/theme';
 
 // Catálogo pedagógico de Minha Evolução — dono-only (docs/product/evolucao-
 // vs-desempenho.md §8). RLS já era dono-only desde a migração fundacional
 // (0007); até esta tela, categorias/habilidades/requisitos só podiam ser
 // editados rodando SQL direto no Supabase.
+//
+// Adicionar/editar/excluir padronizados (pedido do dono, 2026-09-22): botão
+// "+ [Nome]" no topo de cada seção abre um FormModal; cada linha ganha o
+// lápis (edita no mesmo modal, com confirmação ao salvar) e a lixeira (exclui
+// de vez, checando uso antes) além do toggle de ativo já existente.
 
 const STATUS_OPCOES: { valor: StatusHabilidadeEvolucao; label: string }[] = [
   { valor: 'nao_iniciado', label: 'Não iniciado' },
@@ -63,29 +70,33 @@ export default function CatalogoEvolucao() {
   const [salvando, setSalvando] = useState(false);
 
   // --- Modalidades ---
-  const [mostrarFormModalidade, setMostrarFormModalidade] = useState(false);
-  const [nomeNovaModalidade, setNomeNovaModalidade] = useState('');
+  const [modalModalidadeAberto, setModalModalidadeAberto] = useState(false);
+  const [editandoModalidade, setEditandoModalidade] = useState<ModalidadeEvolucao | null>(null);
+  const [nomeModalidadeForm, setNomeModalidadeForm] = useState('');
 
   // --- Categorias ---
-  const [modalidadeNovaCategoria, setModalidadeNovaCategoria] = useState<string | null>(null);
-  const [nomeNovaCategoria, setNomeNovaCategoria] = useState('');
+  const [modalCategoriaAberto, setModalCategoriaAberto] = useState(false);
+  const [editandoCategoria, setEditandoCategoria] = useState<CategoriaCatalogo | null>(null);
+  const [modalidadeCategoriaForm, setModalidadeCategoriaForm] = useState<string | null>(null);
+  const [nomeCategoriaForm, setNomeCategoriaForm] = useState('');
 
   // --- Habilidades ---
-  const [categoriaNovaHabilidade, setCategoriaNovaHabilidade] = useState<string | null>(null);
-  const [nomeNovaHabilidade, setNomeNovaHabilidade] = useState('');
-  const [codigoNovaHabilidade, setCodigoNovaHabilidade] = useState('');
-  const [valorBaseNovaHabilidade, setValorBaseNovaHabilidade] = useState('1');
-  // Edição inline do valor base de habilidades já existentes — só guarda o
-  // texto em edição, indexado por habilidade, até o campo perder o foco.
-  const [edicaoValorBase, setEdicaoValorBase] = useState<Record<string, string>>({});
+  const [modalHabilidadeAberto, setModalHabilidadeAberto] = useState(false);
+  const [editandoHabilidade, setEditandoHabilidade] = useState<HabilidadeCatalogo | null>(null);
+  const [categoriaHabilidadeForm, setCategoriaHabilidadeForm] = useState<string | null>(null);
+  const [nomeHabilidadeForm, setNomeHabilidadeForm] = useState('');
+  const [codigoHabilidadeForm, setCodigoHabilidadeForm] = useState('');
+  const [valorBaseHabilidadeForm, setValorBaseHabilidadeForm] = useState('1');
 
   // --- Requisitos ---
   const [metodologiaSelecionada, setMetodologiaSelecionada] = useState<string | null>(null);
   const [nivelSelecionado, setNivelSelecionado] = useState<string | null>(null);
-  const [habilidadeNovoRequisito, setHabilidadeNovoRequisito] = useState<string | null>(null);
-  const [pesoNovoRequisito, setPesoNovoRequisito] = useState('1');
-  const [statusNovoRequisito, setStatusNovoRequisito] = useState<StatusHabilidadeEvolucao>('dominado');
-  const [notaNovoRequisito, setNotaNovoRequisito] = useState('');
+  const [modalRequisitoAberto, setModalRequisitoAberto] = useState(false);
+  const [editandoRequisito, setEditandoRequisito] = useState<RequisitoNivelAdmin | null>(null);
+  const [habilidadeRequisitoForm, setHabilidadeRequisitoForm] = useState<string | null>(null);
+  const [pesoRequisitoForm, setPesoRequisitoForm] = useState('1');
+  const [statusRequisitoForm, setStatusRequisitoForm] = useState<StatusHabilidadeEvolucao>('dominado');
+  const [notaRequisitoForm, setNotaRequisitoForm] = useState('');
 
   const {
     data: modalidades,
@@ -132,21 +143,48 @@ export default function CatalogoEvolucao() {
     return <Redirect href="/" />;
   }
 
-  async function adicionarModalidade() {
-    if (!nomeNovaModalidade.trim()) {
+  // --- Modalidades ---
+
+  function abrirNovaModalidade() {
+    setEditandoModalidade(null);
+    setNomeModalidadeForm('');
+    setErro(null);
+    setModalModalidadeAberto(true);
+  }
+
+  function abrirEdicaoModalidade(modalidade: ModalidadeEvolucao) {
+    setEditandoModalidade(modalidade);
+    setNomeModalidadeForm(modalidade.nome);
+    setErro(null);
+    setModalModalidadeAberto(true);
+  }
+
+  function confirmarSalvarModalidade() {
+    if (!nomeModalidadeForm.trim()) {
       setErro('Informe o nome da modalidade.');
       return;
     }
+    if (editandoModalidade) {
+      confirmSave(salvarModalidade);
+    } else {
+      salvarModalidade();
+    }
+  }
+
+  async function salvarModalidade() {
     setSalvando(true);
     setErro(null);
     try {
-      await criarModalidade(nomeNovaModalidade.trim(), null);
-      setNomeNovaModalidade('');
-      setMostrarFormModalidade(false);
+      if (editandoModalidade) {
+        await atualizarModalidade(editandoModalidade.id, { nome: nomeModalidadeForm.trim() });
+      } else {
+        await criarModalidade(nomeModalidadeForm.trim(), null);
+      }
+      setModalModalidadeAberto(false);
       await recarregarModalidades();
     } catch (err) {
       console.error(err);
-      setErro('Erro ao criar modalidade. Tente novamente.');
+      setErro('Erro ao salvar modalidade. Tente novamente.');
     } finally {
       setSalvando(false);
     }
@@ -163,25 +201,81 @@ export default function CatalogoEvolucao() {
     }
   }
 
-  async function adicionarCategoria() {
-    if (!modalidadeNovaCategoria || !nomeNovaCategoria.trim()) {
-      setErro('Escolha a modalidade e informe o nome da categoria.');
+  async function excluirModalidadeHandler(modalidade: ModalidadeEvolucao) {
+    setErro(null);
+    try {
+      const uso = await getUsoModalidade(modalidade.id);
+      if (uso > 0) {
+        setErro(`Não é possível excluir "${modalidade.nome}": tem ${uso} categoria(s). Desative em vez de excluir.`);
+        return;
+      }
+      confirmDelete(modalidade.nome, async () => {
+        try {
+          await excluirModalidade(modalidade.id);
+          await recarregarModalidades();
+        } catch (err) {
+          console.error(err);
+          setErro('Erro ao excluir modalidade. Tente novamente.');
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      setErro('Erro ao verificar uso da modalidade. Tente novamente.');
+    }
+  }
+
+  // --- Categorias ---
+
+  function abrirNovaCategoria() {
+    setEditandoCategoria(null);
+    setModalidadeCategoriaForm(null);
+    setNomeCategoriaForm('');
+    setErro(null);
+    setModalCategoriaAberto(true);
+  }
+
+  function abrirEdicaoCategoria(categoria: CategoriaCatalogo) {
+    setEditandoCategoria(categoria);
+    setModalidadeCategoriaForm(categoria.modalidadeId);
+    setNomeCategoriaForm(categoria.nome);
+    setErro(null);
+    setModalCategoriaAberto(true);
+  }
+
+  function confirmarSalvarCategoria() {
+    if (!editandoCategoria && !modalidadeCategoriaForm) {
+      setErro('Escolha a modalidade.');
       return;
     }
+    if (!nomeCategoriaForm.trim()) {
+      setErro('Informe o nome da categoria.');
+      return;
+    }
+    if (editandoCategoria) {
+      confirmSave(salvarCategoria);
+    } else {
+      salvarCategoria();
+    }
+  }
+
+  async function salvarCategoria() {
     setSalvando(true);
     setErro(null);
     try {
-      // Ordem é só dica de exibição (ordenação da lista) — próxima posição
-      // dentro da mesma modalidade, calculada sozinha em vez de pedir pro
-      // dono adivinhar um número.
-      const proximaOrdem =
-        (categorias ?? []).filter((c) => c.modalidadeId === modalidadeNovaCategoria).length + 1;
-      await criarCategoria(modalidadeNovaCategoria, nomeNovaCategoria.trim(), null, proximaOrdem);
-      setNomeNovaCategoria('');
+      if (editandoCategoria) {
+        await atualizarCategoria(editandoCategoria.id, { nome: nomeCategoriaForm.trim() });
+      } else {
+        // Ordem é só dica de exibição (ordenação da lista) — próxima posição
+        // dentro da mesma modalidade, calculada sozinha em vez de pedir pro
+        // dono adivinhar um número.
+        const proximaOrdem = (categorias ?? []).filter((c) => c.modalidadeId === modalidadeCategoriaForm).length + 1;
+        await criarCategoria(modalidadeCategoriaForm!, nomeCategoriaForm.trim(), null, proximaOrdem);
+      }
+      setModalCategoriaAberto(false);
       await recarregarCategorias();
     } catch (err) {
       console.error(err);
-      setErro('Erro ao criar categoria. Tente novamente.');
+      setErro('Erro ao salvar categoria. Tente novamente.');
     } finally {
       setSalvando(false);
     }
@@ -198,33 +292,97 @@ export default function CatalogoEvolucao() {
     }
   }
 
-  async function adicionarHabilidade() {
-    if (!categoriaNovaHabilidade || !nomeNovaHabilidade.trim()) {
-      setErro('Escolha a categoria e informe o nome da habilidade.');
+  async function excluirCategoriaHandler(categoria: CategoriaCatalogo) {
+    setErro(null);
+    try {
+      const uso = await getUsoCategoria(categoria.id);
+      if (uso > 0) {
+        setErro(`Não é possível excluir "${categoria.nome}": tem ${uso} habilidade(s). Desative em vez de excluir.`);
+        return;
+      }
+      confirmDelete(categoria.nome, async () => {
+        try {
+          await excluirCategoria(categoria.id);
+          await recarregarCategorias();
+        } catch (err) {
+          console.error(err);
+          setErro('Erro ao excluir categoria. Tente novamente.');
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      setErro('Erro ao verificar uso da categoria. Tente novamente.');
+    }
+  }
+
+  // --- Habilidades ---
+
+  function abrirNovaHabilidade() {
+    setEditandoHabilidade(null);
+    setCategoriaHabilidadeForm(null);
+    setNomeHabilidadeForm('');
+    setCodigoHabilidadeForm('');
+    setValorBaseHabilidadeForm('1');
+    setErro(null);
+    setModalHabilidadeAberto(true);
+  }
+
+  function abrirEdicaoHabilidade(habilidade: HabilidadeCatalogo) {
+    setEditandoHabilidade(habilidade);
+    setCategoriaHabilidadeForm(habilidade.categoriaId);
+    setNomeHabilidadeForm(habilidade.nome);
+    setCodigoHabilidadeForm(habilidade.nomeInternacional ?? '');
+    setValorBaseHabilidadeForm(String(habilidade.valorBase));
+    setErro(null);
+    setModalHabilidadeAberto(true);
+  }
+
+  function confirmarSalvarHabilidade() {
+    if (!editandoHabilidade && !categoriaHabilidadeForm) {
+      setErro('Escolha a categoria.');
       return;
     }
-    const valorBase = Number(valorBaseNovaHabilidade.replace(',', '.'));
+    if (!nomeHabilidadeForm.trim()) {
+      setErro('Informe o nome da habilidade.');
+      return;
+    }
+    const valorBase = Number(valorBaseHabilidadeForm.replace(',', '.'));
     if (!valorBase || valorBase <= 0) {
       setErro('Valor base precisa ser maior que zero.');
       return;
     }
+    if (editandoHabilidade) {
+      confirmSave(salvarHabilidade);
+    } else {
+      salvarHabilidade();
+    }
+  }
+
+  async function salvarHabilidade() {
+    const valorBase = Number(valorBaseHabilidadeForm.replace(',', '.'));
     setSalvando(true);
     setErro(null);
     try {
-      await criarHabilidade(
-        categoriaNovaHabilidade,
-        nomeNovaHabilidade.trim(),
-        codigoNovaHabilidade.trim() || null,
-        null,
-        valorBase
-      );
-      setNomeNovaHabilidade('');
-      setCodigoNovaHabilidade('');
-      setValorBaseNovaHabilidade('1');
+      if (editandoHabilidade) {
+        await atualizarHabilidade(editandoHabilidade.id, {
+          nome: nomeHabilidadeForm.trim(),
+          nomeInternacional: codigoHabilidadeForm.trim() || null,
+          valorBase,
+        });
+      } else {
+        await criarHabilidade(
+          categoriaHabilidadeForm!,
+          nomeHabilidadeForm.trim(),
+          codigoHabilidadeForm.trim() || null,
+          null,
+          valorBase
+        );
+      }
+      setModalHabilidadeAberto(false);
       await recarregarHabilidades();
     } catch (err) {
       console.error(err);
-      setErro('Erro ao criar habilidade. Tente novamente.');
+      setErro('Erro ao salvar habilidade. Tente novamente.');
     } finally {
       setSalvando(false);
     }
@@ -241,67 +399,102 @@ export default function CatalogoEvolucao() {
     }
   }
 
-  async function salvarValorBase(habilidade: HabilidadeCatalogo) {
-    const texto = edicaoValorBase[habilidade.id];
-    if (texto === undefined) return;
-    const valorBase = Number(texto.replace(',', '.'));
-    setEdicaoValorBase((atual) => {
-      const { [habilidade.id]: _removido, ...resto } = atual;
-      return resto;
-    });
-    if (!valorBase || valorBase <= 0 || valorBase === habilidade.valorBase) return;
+  async function excluirHabilidadeHandler(habilidade: HabilidadeCatalogo) {
     setErro(null);
     try {
-      await atualizarHabilidade(habilidade.id, { valorBase });
-      await recarregarHabilidades();
+      const uso = await getUsoHabilidade(habilidade.id);
+      if (uso > 0) {
+        setErro(
+          `Não é possível excluir "${habilidade.nome}": já foi avaliada ou é exigida em algum nível. Desative em vez de excluir.`
+        );
+        return;
+      }
+      confirmDelete(habilidade.nome, async () => {
+        try {
+          await excluirHabilidade(habilidade.id);
+          await recarregarHabilidades();
+        } catch (err) {
+          console.error(err);
+          setErro('Erro ao excluir habilidade. Tente novamente.');
+        }
+      });
     } catch (err) {
       console.error(err);
-      setErro('Erro ao atualizar valor base. Tente novamente.');
+      setErro('Erro ao verificar uso da habilidade. Tente novamente.');
     }
   }
 
-  async function adicionarRequisito() {
-    if (!nivelSelecionado || !habilidadeNovoRequisito) {
+  // --- Requisitos ---
+
+  function abrirNovoRequisito() {
+    setEditandoRequisito(null);
+    setHabilidadeRequisitoForm(null);
+    setPesoRequisitoForm('1');
+    setStatusRequisitoForm('dominado');
+    setNotaRequisitoForm('');
+    setErro(null);
+    setModalRequisitoAberto(true);
+  }
+
+  function abrirEdicaoRequisito(requisito: RequisitoNivelAdmin) {
+    setEditandoRequisito(requisito);
+    setHabilidadeRequisitoForm(requisito.habilidadeId);
+    setPesoRequisitoForm(String(requisito.peso));
+    setStatusRequisitoForm(requisito.statusMinimo);
+    setNotaRequisitoForm(requisito.notaMinima != null ? String(requisito.notaMinima) : '');
+    setErro(null);
+    setModalRequisitoAberto(true);
+  }
+
+  function confirmarSalvarRequisito() {
+    if (!nivelSelecionado || (!editandoRequisito && !habilidadeRequisitoForm)) {
       setErro('Escolha o nível e a habilidade.');
       return;
     }
-    const peso = Number(pesoNovoRequisito);
+    const peso = Number(pesoRequisitoForm);
     if (!peso || peso <= 0) {
       setErro('Peso precisa ser maior que zero.');
       return;
     }
+    if (editandoRequisito) {
+      confirmSave(salvarRequisito);
+    } else {
+      salvarRequisito();
+    }
+  }
+
+  async function salvarRequisito() {
+    const peso = Number(pesoRequisitoForm);
+    const notaMinima = notaRequisitoForm.trim() ? Number(notaRequisitoForm) : null;
     setSalvando(true);
     setErro(null);
     try {
-      await adicionarRequisitoNivel(
-        nivelSelecionado,
-        habilidadeNovoRequisito,
-        peso,
-        statusNovoRequisito,
-        notaNovoRequisito.trim() ? Number(notaNovoRequisito) : null,
-        true
-      );
-      setHabilidadeNovoRequisito(null);
-      setPesoNovoRequisito('1');
-      setNotaNovoRequisito('');
+      if (editandoRequisito) {
+        await atualizarRequisitoNivel(editandoRequisito.id, { peso, statusMinimo: statusRequisitoForm, notaMinima });
+      } else {
+        await adicionarRequisitoNivel(nivelSelecionado!, habilidadeRequisitoForm!, peso, statusRequisitoForm, notaMinima, true);
+      }
+      setModalRequisitoAberto(false);
       await recarregarRequisitos();
     } catch (err) {
       console.error(err);
-      setErro('Erro ao adicionar requisito. Já pode existir um requisito pra essa habilidade nesse nível.');
+      setErro('Erro ao salvar requisito. Já pode existir um requisito pra essa habilidade nesse nível.');
     } finally {
       setSalvando(false);
     }
   }
 
-  async function removerRequisito(id: string) {
+  function excluirRequisitoHandler(requisito: RequisitoNivelAdmin) {
     setErro(null);
-    try {
-      await removerRequisitoNivel(id);
-      await recarregarRequisitos();
-    } catch (err) {
-      console.error(err);
-      setErro('Erro ao remover requisito. Tente novamente.');
-    }
+    confirmDelete(`o requisito de ${requisito.habilidadeNome}`, async () => {
+      try {
+        await removerRequisitoNivel(requisito.id);
+        await recarregarRequisitos();
+      } catch (err) {
+        console.error(err);
+        setErro('Erro ao excluir requisito. Tente novamente.');
+      }
+    });
   }
 
   const carregandoGeral = carregandoModalidades || carregandoCategorias || carregandoHabilidades || carregandoMetodologias;
@@ -343,7 +536,12 @@ export default function CatalogoEvolucao() {
 
         {!carregandoGeral && secaoAberta === 'categorias' ? (
           <View>
-            <Text style={styles.tituloSecao}>Modalidades</Text>
+            <View style={styles.tituloRow}>
+              <Text style={styles.tituloSecao}>Modalidades</Text>
+              <TouchableOpacity testID="catalogo-modalidade-abrir-novo" style={styles.novoBotao} onPress={abrirNovaModalidade}>
+                <Text style={styles.novoBotaoTexto}>+ Modalidade</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={styles.explicacao}>
               Uma modalidade agrupa as categorias técnicas (ex.: "Livre"). A maioria das escolas usa só uma.
             </Text>
@@ -352,101 +550,54 @@ export default function CatalogoEvolucao() {
                 <Text style={[type.body, styles.itemTextoWrap, !modalidade.ativo && styles.inativo]}>
                   {modalidade.nome}
                 </Text>
-                <Switch value={modalidade.ativo} onValueChange={() => alternarAtivoModalidade(modalidade)} />
+                <ToggleAtivo
+                  testID={`catalogo-modalidade-${modalidade.id}-toggle`}
+                  ativo={modalidade.ativo}
+                  onToggle={() => alternarAtivoModalidade(modalidade)}
+                />
+                <RowActions
+                  testIdBase={`catalogo-modalidade-${modalidade.id}`}
+                  onEdit={() => abrirEdicaoModalidade(modalidade)}
+                  onDelete={() => excluirModalidadeHandler(modalidade)}
+                />
               </View>
             ))}
 
-            {mostrarFormModalidade ? (
-              <View style={styles.formCard}>
-                <Text style={styles.formTitulo}>Nova modalidade</Text>
-                <Text style={[type.label, styles.campoRotulo]}>Nome</Text>
-                <TextInput
-                  testID="catalogo-modalidade-nome"
-                  style={styles.input}
-                  value={nomeNovaModalidade}
-                  onChangeText={setNomeNovaModalidade}
-                  placeholder="Ex.: Dupla de Dança"
-                />
-                <View style={styles.formBotoes}>
-                  <TouchableOpacity
-                    style={styles.botaoSecundario}
-                    onPress={() => {
-                      setMostrarFormModalidade(false);
-                      setNomeNovaModalidade('');
-                    }}
-                  >
-                    <Text style={styles.botaoSecundarioTexto}>Cancelar</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    testID="catalogo-modalidade-adicionar"
-                    style={[styles.botao, styles.botaoFlex, salvando && styles.botaoDesabilitado]}
-                    onPress={adicionarModalidade}
-                    disabled={salvando}
-                  >
-                    <Text style={styles.botaoTexto}>Criar modalidade</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <TouchableOpacity
-                testID="catalogo-modalidade-abrir-form"
-                style={styles.linkAdicionar}
-                onPress={() => setMostrarFormModalidade(true)}
-              >
-                <Text style={styles.linkAdicionarTexto}>+ Nova modalidade</Text>
+            <View style={styles.tituloRow}>
+              <Text style={styles.tituloSecao}>Categorias</Text>
+              <TouchableOpacity testID="catalogo-categoria-abrir-novo" style={styles.novoBotao} onPress={abrirNovaCategoria}>
+                <Text style={styles.novoBotaoTexto}>+ Categoria</Text>
               </TouchableOpacity>
-            )}
-
-            <Text style={styles.tituloSecao}>Categorias</Text>
+            </View>
             {(categorias ?? []).map((categoria) => (
               <View key={categoria.id} style={styles.itemRow}>
                 <View style={styles.itemTextoWrap}>
                   <Text style={[type.body, !categoria.ativo && styles.inativo]}>{categoria.nome}</Text>
                   <Text style={type.caption}>{categoria.modalidadeNome}</Text>
                 </View>
-                <Switch value={categoria.ativo} onValueChange={() => alternarAtivoCategoria(categoria)} />
+                <ToggleAtivo
+                  testID={`catalogo-categoria-${categoria.id}-toggle`}
+                  ativo={categoria.ativo}
+                  onToggle={() => alternarAtivoCategoria(categoria)}
+                />
+                <RowActions
+                  testIdBase={`catalogo-categoria-${categoria.id}`}
+                  onEdit={() => abrirEdicaoCategoria(categoria)}
+                  onDelete={() => excluirCategoriaHandler(categoria)}
+                />
               </View>
             ))}
-
-            <View style={styles.formCard}>
-              <Text style={styles.formTitulo}>Nova categoria</Text>
-              {opcoesModalidades.length === 0 ? (
-                <Text style={styles.avisoTexto}>Cadastre uma modalidade acima antes de criar uma categoria.</Text>
-              ) : (
-                <>
-                  <Text style={[type.label, styles.campoRotulo]}>Modalidade</Text>
-                  <Dropdown
-                    testID="catalogo-categoria-modalidade"
-                    placeholder="Escolha a modalidade"
-                    options={opcoesModalidades}
-                    value={modalidadeNovaCategoria}
-                    onChange={setModalidadeNovaCategoria}
-                  />
-                  <Text style={[type.label, styles.campoRotulo]}>Nome</Text>
-                  <TextInput
-                    testID="catalogo-categoria-nome"
-                    style={styles.input}
-                    value={nomeNovaCategoria}
-                    onChangeText={setNomeNovaCategoria}
-                    placeholder="Ex.: Figuras"
-                  />
-                  <TouchableOpacity
-                    testID="catalogo-categoria-adicionar"
-                    style={[styles.botao, salvando && styles.botaoDesabilitado]}
-                    onPress={adicionarCategoria}
-                    disabled={salvando}
-                  >
-                    <Text style={styles.botaoTexto}>Adicionar categoria</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
           </View>
         ) : null}
 
         {!carregandoGeral && secaoAberta === 'habilidades' ? (
           <View>
-            <Text style={styles.tituloSecao}>Habilidades</Text>
+            <View style={styles.tituloRow}>
+              <Text style={styles.tituloSecao}>Habilidades</Text>
+              <TouchableOpacity testID="catalogo-habilidade-abrir-novo" style={styles.novoBotao} onPress={abrirNovaHabilidade}>
+                <Text style={styles.novoBotaoTexto}>+ Habilidade</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={styles.explicacao}>
               Valor base é o "quanto vale" a habilidade na pontuação do aluno (docs/product/evolucao-vs-desempenho.md
               §8.2) — quanto maior, mais ela pesa quando avaliada.
@@ -457,70 +608,22 @@ export default function CatalogoEvolucao() {
                   <Text style={[type.body, !habilidade.ativo && styles.inativo]}>{habilidade.nome}</Text>
                   <Text style={type.caption}>
                     {habilidade.categoriaNome}
-                    {habilidade.nomeInternacional ? ` · ${habilidade.nomeInternacional}` : ''}
+                    {habilidade.nomeInternacional ? ` · ${habilidade.nomeInternacional}` : ''} · valor{' '}
+                    {habilidade.valorBase}
                   </Text>
                 </View>
-                <TextInput
-                  testID={`catalogo-habilidade-valor-base-${habilidade.id}`}
-                  style={styles.inputValorBase}
-                  value={edicaoValorBase[habilidade.id] ?? String(habilidade.valorBase)}
-                  onChangeText={(texto) => setEdicaoValorBase((atual) => ({ ...atual, [habilidade.id]: texto }))}
-                  onEndEditing={() => salvarValorBase(habilidade)}
-                  keyboardType="numeric"
+                <ToggleAtivo
+                  testID={`catalogo-habilidade-${habilidade.id}-toggle`}
+                  ativo={habilidade.ativo}
+                  onToggle={() => alternarAtivoHabilidade(habilidade)}
                 />
-                <Switch value={habilidade.ativo} onValueChange={() => alternarAtivoHabilidade(habilidade)} />
+                <RowActions
+                  testIdBase={`catalogo-habilidade-${habilidade.id}`}
+                  onEdit={() => abrirEdicaoHabilidade(habilidade)}
+                  onDelete={() => excluirHabilidadeHandler(habilidade)}
+                />
               </View>
             ))}
-
-            <View style={styles.formCard}>
-              <Text style={styles.formTitulo}>Nova habilidade</Text>
-              {opcoesCategorias.length === 0 ? (
-                <Text style={styles.avisoTexto}>Cadastre uma categoria na aba "Categorias" antes de continuar.</Text>
-              ) : (
-                <>
-                  <Text style={[type.label, styles.campoRotulo]}>Categoria</Text>
-                  <Dropdown
-                    testID="catalogo-habilidade-categoria"
-                    placeholder="Escolha a categoria"
-                    options={opcoesCategorias}
-                    value={categoriaNovaHabilidade}
-                    onChange={setCategoriaNovaHabilidade}
-                  />
-                  <Text style={[type.label, styles.campoRotulo]}>Nome</Text>
-                  <TextInput
-                    testID="catalogo-habilidade-nome"
-                    style={styles.input}
-                    value={nomeNovaHabilidade}
-                    onChangeText={setNomeNovaHabilidade}
-                    placeholder="Ex.: Figura de alongamento"
-                  />
-                  <Text style={[type.label, styles.campoRotulo]}>Código oficial (opcional)</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={codigoNovaHabilidade}
-                    onChangeText={setCodigoNovaHabilidade}
-                    placeholder="Ex.: FigA"
-                  />
-                  <Text style={[type.label, styles.campoRotulo]}>Valor base (peso na pontuação)</Text>
-                  <TextInput
-                    testID="catalogo-habilidade-valor-base"
-                    style={styles.input}
-                    value={valorBaseNovaHabilidade}
-                    onChangeText={setValorBaseNovaHabilidade}
-                    placeholder="Ex.: 10"
-                    keyboardType="numeric"
-                  />
-                  <TouchableOpacity
-                    testID="catalogo-habilidade-adicionar"
-                    style={[styles.botao, salvando && styles.botaoDesabilitado]}
-                    onPress={adicionarHabilidade}
-                    disabled={salvando}
-                  >
-                    <Text style={styles.botaoTexto}>Adicionar habilidade</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
           </View>
         ) : null}
 
@@ -559,80 +662,35 @@ export default function CatalogoEvolucao() {
             ) : null}
 
             {nivelSelecionado ? (
+              <View style={styles.tituloRow}>
+                <Text style={type.caption}>Requisitos deste nível</Text>
+                <TouchableOpacity testID="catalogo-requisito-abrir-novo" style={styles.novoBotao} onPress={abrirNovoRequisito}>
+                  <Text style={styles.novoBotaoTexto}>+ Requisito</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            {nivelSelecionado ? (
               carregandoRequisitos ? (
                 <ActivityIndicator color={colors.primary} style={styles.center} />
               ) : (
-                <>
-                  {(requisitos ?? []).map((requisito) => (
-                    <View key={requisito.id} style={styles.itemRow}>
-                      <View style={styles.itemTextoWrap}>
-                        <Text style={type.body}>{requisito.habilidadeNome}</Text>
-                        <Text style={type.caption}>
-                          {requisito.categoriaNome} · peso {requisito.peso} · meta{' '}
-                          {requisito.statusMinimo.replaceAll('_', ' ')}
-                          {requisito.notaMinima != null ? ` · ${requisito.notaMinima}% mínimo` : ''}
-                        </Text>
-                      </View>
-                      <TouchableOpacity onPress={() => removerRequisito(requisito.id)}>
-                        <Text style={styles.removerTexto}>Remover</Text>
-                      </TouchableOpacity>
+                (requisitos ?? []).map((requisito) => (
+                  <View key={requisito.id} style={styles.itemRow}>
+                    <View style={styles.itemTextoWrap}>
+                      <Text style={type.body}>{requisito.habilidadeNome}</Text>
+                      <Text style={type.caption}>
+                        {requisito.categoriaNome} · peso {requisito.peso} · meta{' '}
+                        {requisito.statusMinimo.replaceAll('_', ' ')}
+                        {requisito.notaMinima != null ? ` · ${requisito.notaMinima}% mínimo` : ''}
+                      </Text>
                     </View>
-                  ))}
-
-                  <View style={styles.formCard}>
-                    <Text style={styles.formTitulo}>Novo requisito</Text>
-                    <Text style={[type.label, styles.campoRotulo]}>Habilidade</Text>
-                    <Dropdown
-                      testID="catalogo-requisito-habilidade"
-                      placeholder="Escolha a habilidade"
-                      searchable
-                      options={opcoesHabilidadesDisponiveis}
-                      value={habilidadeNovoRequisito}
-                      onChange={setHabilidadeNovoRequisito}
-                      vazio="Todas as habilidades ativas já estão nesse nível."
+                    <RowActions
+                      testIdBase={`catalogo-requisito-${requisito.id}`}
+                      onEdit={() => abrirEdicaoRequisito(requisito)}
+                      onDelete={() => excluirRequisitoHandler(requisito)}
                     />
-                    <Text style={[type.label, styles.campoRotulo]}>Peso (quanto conta no progresso do nível)</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={pesoNovoRequisito}
-                      onChangeText={setPesoNovoRequisito}
-                      placeholder="Ex.: 1"
-                      keyboardType="numeric"
-                    />
-                    <Text style={[type.label, styles.campoRotulo]}>Status mínimo pra contar como atingido</Text>
-                    <View style={styles.chipsRow}>
-                      {STATUS_OPCOES.map((opcao) => (
-                        <TouchableOpacity
-                          key={opcao.valor}
-                          style={[styles.chip, statusNovoRequisito === opcao.valor && styles.chipAtivo]}
-                          onPress={() => setStatusNovoRequisito(opcao.valor)}
-                        >
-                          <Text
-                            style={[styles.chipTexto, statusNovoRequisito === opcao.valor && styles.chipTextoAtivo]}
-                          >
-                            {opcao.label}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                    <Text style={[type.label, styles.campoRotulo]}>Nota mínima (opcional, 0-100)</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={notaNovoRequisito}
-                      onChangeText={setNotaNovoRequisito}
-                      placeholder="Deixe em branco se não exigir nota"
-                      keyboardType="numeric"
-                    />
-                    <TouchableOpacity
-                      testID="catalogo-requisito-adicionar"
-                      style={[styles.botao, salvando && styles.botaoDesabilitado]}
-                      onPress={adicionarRequisito}
-                      disabled={salvando}
-                    >
-                      <Text style={styles.botaoTexto}>Adicionar requisito</Text>
-                    </TouchableOpacity>
                   </View>
-                </>
+                ))
               )
             ) : (
               <Text style={type.caption}>Escolha metodologia e nível pra ver/editar os requisitos.</Text>
@@ -640,6 +698,202 @@ export default function CatalogoEvolucao() {
           </View>
         ) : null}
       </ScrollView>
+
+      <FormModal
+        visible={modalModalidadeAberto}
+        title={editandoModalidade ? 'Editar modalidade' : 'Nova modalidade'}
+        onClose={() => !salvando && setModalModalidadeAberto(false)}
+      >
+        <Text style={[type.label, styles.campoRotulo]}>Nome</Text>
+        <TextInput
+          testID="catalogo-modalidade-nome"
+          style={styles.input}
+          value={nomeModalidadeForm}
+          onChangeText={setNomeModalidadeForm}
+          placeholder="Ex.: Dupla de Dança"
+        />
+        <TouchableOpacity
+          testID="catalogo-modalidade-salvar"
+          style={[styles.botao, salvando && styles.botaoDesabilitado]}
+          onPress={confirmarSalvarModalidade}
+          disabled={salvando}
+        >
+          {salvando ? (
+            <ActivityIndicator color={colors.onPrimary} />
+          ) : (
+            <Text style={styles.botaoTexto}>{editandoModalidade ? 'Salvar alterações' : 'Criar modalidade'}</Text>
+          )}
+        </TouchableOpacity>
+      </FormModal>
+
+      <FormModal
+        visible={modalCategoriaAberto}
+        title={editandoCategoria ? 'Editar categoria' : 'Nova categoria'}
+        onClose={() => !salvando && setModalCategoriaAberto(false)}
+      >
+        {!editandoCategoria ? (
+          opcoesModalidades.length === 0 ? (
+            <Text style={styles.avisoTexto}>Cadastre uma modalidade antes de criar uma categoria.</Text>
+          ) : (
+            <>
+              <Text style={[type.label, styles.campoRotulo]}>Modalidade</Text>
+              <Dropdown
+                testID="catalogo-categoria-modalidade"
+                placeholder="Escolha a modalidade"
+                options={opcoesModalidades}
+                value={modalidadeCategoriaForm}
+                onChange={setModalidadeCategoriaForm}
+              />
+            </>
+          )
+        ) : null}
+        <Text style={[type.label, styles.campoRotulo]}>Nome</Text>
+        <TextInput
+          testID="catalogo-categoria-nome"
+          style={styles.input}
+          value={nomeCategoriaForm}
+          onChangeText={setNomeCategoriaForm}
+          placeholder="Ex.: Figuras"
+        />
+        <TouchableOpacity
+          testID="catalogo-categoria-salvar"
+          style={[styles.botao, salvando && styles.botaoDesabilitado]}
+          onPress={confirmarSalvarCategoria}
+          disabled={salvando}
+        >
+          {salvando ? (
+            <ActivityIndicator color={colors.onPrimary} />
+          ) : (
+            <Text style={styles.botaoTexto}>{editandoCategoria ? 'Salvar alterações' : 'Adicionar categoria'}</Text>
+          )}
+        </TouchableOpacity>
+      </FormModal>
+
+      <FormModal
+        visible={modalHabilidadeAberto}
+        title={editandoHabilidade ? 'Editar habilidade' : 'Nova habilidade'}
+        onClose={() => !salvando && setModalHabilidadeAberto(false)}
+      >
+        {!editandoHabilidade ? (
+          opcoesCategorias.length === 0 ? (
+            <Text style={styles.avisoTexto}>Cadastre uma categoria antes de continuar.</Text>
+          ) : (
+            <>
+              <Text style={[type.label, styles.campoRotulo]}>Categoria</Text>
+              <Dropdown
+                testID="catalogo-habilidade-categoria"
+                placeholder="Escolha a categoria"
+                options={opcoesCategorias}
+                value={categoriaHabilidadeForm}
+                onChange={setCategoriaHabilidadeForm}
+              />
+            </>
+          )
+        ) : null}
+        <Text style={[type.label, styles.campoRotulo]}>Nome</Text>
+        <TextInput
+          testID="catalogo-habilidade-nome"
+          style={styles.input}
+          value={nomeHabilidadeForm}
+          onChangeText={setNomeHabilidadeForm}
+          placeholder="Ex.: Figura de alongamento"
+        />
+        <Text style={[type.label, styles.campoRotulo]}>Código oficial (opcional)</Text>
+        <TextInput
+          testID="catalogo-habilidade-codigo"
+          style={styles.input}
+          value={codigoHabilidadeForm}
+          onChangeText={setCodigoHabilidadeForm}
+          placeholder="Ex.: FigA"
+        />
+        <Text style={[type.label, styles.campoRotulo]}>Valor base (peso na pontuação)</Text>
+        <TextInput
+          testID="catalogo-habilidade-valor-base"
+          style={styles.input}
+          value={valorBaseHabilidadeForm}
+          onChangeText={setValorBaseHabilidadeForm}
+          placeholder="Ex.: 10"
+          keyboardType="numeric"
+        />
+        <TouchableOpacity
+          testID="catalogo-habilidade-salvar"
+          style={[styles.botao, salvando && styles.botaoDesabilitado]}
+          onPress={confirmarSalvarHabilidade}
+          disabled={salvando}
+        >
+          {salvando ? (
+            <ActivityIndicator color={colors.onPrimary} />
+          ) : (
+            <Text style={styles.botaoTexto}>{editandoHabilidade ? 'Salvar alterações' : 'Adicionar habilidade'}</Text>
+          )}
+        </TouchableOpacity>
+      </FormModal>
+
+      <FormModal
+        visible={modalRequisitoAberto}
+        title={editandoRequisito ? 'Editar requisito' : 'Novo requisito'}
+        onClose={() => !salvando && setModalRequisitoAberto(false)}
+      >
+        {!editandoRequisito ? (
+          <>
+            <Text style={[type.label, styles.campoRotulo]}>Habilidade</Text>
+            <Dropdown
+              testID="catalogo-requisito-habilidade"
+              placeholder="Escolha a habilidade"
+              searchable
+              options={opcoesHabilidadesDisponiveis}
+              value={habilidadeRequisitoForm}
+              onChange={setHabilidadeRequisitoForm}
+              vazio="Todas as habilidades ativas já estão nesse nível."
+            />
+          </>
+        ) : null}
+        <Text style={[type.label, styles.campoRotulo]}>Peso (quanto conta no progresso do nível)</Text>
+        <TextInput
+          testID="catalogo-requisito-peso"
+          style={styles.input}
+          value={pesoRequisitoForm}
+          onChangeText={setPesoRequisitoForm}
+          placeholder="Ex.: 1"
+          keyboardType="numeric"
+        />
+        <Text style={[type.label, styles.campoRotulo]}>Status mínimo pra contar como atingido</Text>
+        <View style={styles.chipsRow}>
+          {STATUS_OPCOES.map((opcao) => (
+            <TouchableOpacity
+              key={opcao.valor}
+              style={[styles.chip, statusRequisitoForm === opcao.valor && styles.chipAtivo]}
+              onPress={() => setStatusRequisitoForm(opcao.valor)}
+            >
+              <Text style={[styles.chipTexto, statusRequisitoForm === opcao.valor && styles.chipTextoAtivo]}>
+                {opcao.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <Text style={[type.label, styles.campoRotulo]}>Nota mínima (opcional, 0-100)</Text>
+        <TextInput
+          testID="catalogo-requisito-nota"
+          style={styles.input}
+          value={notaRequisitoForm}
+          onChangeText={setNotaRequisitoForm}
+          placeholder="Deixe em branco se não exigir nota"
+          keyboardType="numeric"
+        />
+        <TouchableOpacity
+          testID="catalogo-requisito-salvar"
+          style={[styles.botao, salvando && styles.botaoDesabilitado]}
+          onPress={confirmarSalvarRequisito}
+          disabled={salvando}
+        >
+          {salvando ? (
+            <ActivityIndicator color={colors.onPrimary} />
+          ) : (
+            <Text style={styles.botaoTexto}>{editandoRequisito ? 'Salvar alterações' : 'Adicionar requisito'}</Text>
+          )}
+        </TouchableOpacity>
+      </FormModal>
+
       <Footer />
     </>
   );
@@ -709,29 +963,35 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textDecorationLine: 'line-through',
   },
+  tituloRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginTop: spacing.xl,
+    marginBottom: spacing.xs,
+  },
   tituloSecao: {
     ...type.subtitle,
     color: colors.text,
-    marginTop: spacing.xl,
-    marginBottom: spacing.xs,
+  },
+  novoBotao: {
+    height: touchTarget - 8,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  novoBotaoTexto: {
+    color: colors.onPrimary,
+    fontFamily: type.subtitle.fontFamily,
+    fontSize: type.subtitle.fontSize,
   },
   explicacao: {
     ...type.caption,
     color: colors.textMuted,
     marginBottom: spacing.md,
-  },
-  formCard: {
-    marginTop: spacing.md,
-    padding: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  formTitulo: {
-    ...type.subtitle,
-    color: colors.text,
-    marginBottom: spacing.xs,
   },
   campoRotulo: {
     color: colors.textMuted,
@@ -742,61 +1002,13 @@ const styles = StyleSheet.create({
     ...type.caption,
     color: colors.textMuted,
   },
-  formBotoes: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  botaoFlex: {
-    flex: 1,
-    marginTop: 0,
-  },
-  botaoSecundario: {
-    height: touchTarget,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  botaoSecundarioTexto: {
-    color: colors.text,
-    fontFamily: type.subtitle.fontFamily,
-    fontSize: type.subtitle.fontSize,
-  },
-  linkAdicionar: {
-    minHeight: touchTarget,
-    justifyContent: 'center',
-    marginTop: spacing.xs,
-  },
-  linkAdicionarTexto: {
-    color: colors.primary,
-    fontFamily: type.subtitle.fontFamily,
-    fontSize: type.subtitle.fontSize,
-  },
   input: {
     height: touchTarget,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
     paddingHorizontal: spacing.lg,
-    backgroundColor: colors.surface,
-    marginTop: spacing.sm,
-    fontFamily: type.body.fontFamily,
-    fontSize: type.body.fontSize,
-    color: colors.text,
-  },
-  inputValorBase: {
-    width: 56,
-    height: touchTarget,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.sm,
     backgroundColor: colors.background,
-    marginRight: spacing.sm,
-    textAlign: 'center',
     fontFamily: type.body.fontFamily,
     fontSize: type.body.fontSize,
     color: colors.text,
@@ -844,10 +1056,5 @@ const styles = StyleSheet.create({
   },
   chipTextoAtivo: {
     color: colors.onPrimary,
-  },
-  removerTexto: {
-    color: colors.danger,
-    fontFamily: type.subtitle.fontFamily,
-    fontSize: type.subtitle.fontSize,
   },
 });

@@ -25,6 +25,7 @@ export default function ConfiguracoesIndex() {
 
   const itens: ItemConfig[] = souDono
     ? [
+        { label: 'Módulos', descricao: 'Nomes e cadastro dos módulos da grade.', href: '/configuracoes/modulos' },
         { label: 'Grade semanal', descricao: 'Horários fixos da semana, por dia e módulo.', href: '/configuracoes/grade-semanal' },
         { label: 'Horários por professor', descricao: 'Disponibilidade de cada professor pra aula particular.', href: '/chamada/disponibilidade' },
         { label: 'Módulos por professor', descricao: 'Quem responde por cada horário/módulo da grade.', href: '/chamada/modulos' },

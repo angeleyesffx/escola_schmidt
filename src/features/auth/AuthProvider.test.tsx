@@ -15,7 +15,8 @@ const mockStartAutoRefresh = jest.fn();
 const mockStopAutoRefresh = jest.fn();
 const mockUnsubscribe = jest.fn();
 const mockPapelSingle = jest.fn();
-const mockAlunoMaybeSingle = jest.fn();
+const mockAlunosQuery = jest.fn();
+const mockRpc = jest.fn();
 const mockAppStateAddEventListener = jest.fn((_event: string, _handler: (proximoEstado: string) => void) => ({
   remove: jest.fn(),
 }));
@@ -55,27 +56,42 @@ jest.mock('../../lib/supabase', () => ({
       select: () => ({
         eq: () => ({
           single: () => mockPapelSingle(),
-          maybeSingle: () => mockAlunoMaybeSingle(),
+          order: () => mockAlunosQuery(),
         }),
       }),
     }),
+    rpc: (...args: unknown[]) => mockRpc(...args),
   },
 }));
 
 function Consumer() {
-  const { loading, session, meuPapel, meuAluno, signIn, signOut, signUp, requestPasswordReset, changePassword } =
-    useAuth();
+  const {
+    loading,
+    session,
+    meuPapel,
+    meusAlunos,
+    meusAlunosCarregado,
+    signIn,
+    signOut,
+    signUp,
+    requestPasswordReset,
+    changePassword,
+    adicionarFilho,
+  } = useAuth();
   const [signupResult, setSignupResult] = useState('');
+  const [signupComFilhosResult, setSignupComFilhosResult] = useState('');
   const [resetResult, setResetResult] = useState('');
   const [passwordResult, setPasswordResult] = useState('');
   const [signInResult, setSignInResult] = useState('');
+  const [adicionarFilhoResult, setAdicionarFilhoResult] = useState('');
 
   return (
     <>
       <Text>{loading ? 'loading' : 'ready'}</Text>
       <Text>{session?.user?.email ?? 'sem-sessao'}</Text>
       <Text>{meuPapel ?? 'sem-papel'}</Text>
-      <Text>{meuAluno?.nome ?? 'sem-aluno'}</Text>
+      <Text>{meusAlunos.map((a) => a.nome).join(', ') || 'sem-aluno'}</Text>
+      <Text>{meusAlunosCarregado ? 'aluno-carregado' : 'aluno-carregando'}</Text>
       <Pressable
         onPress={async () => {
           const result = await signIn('professor@escola.com', 'segredo');
@@ -97,6 +113,35 @@ function Consumer() {
         <Text>sign-up</Text>
       </Pressable>
       <Text>{signupResult}</Text>
+      <Pressable
+        onPress={async () => {
+          const result = await signUp(
+            'Mae Ana',
+            'mae@escola.com',
+            'Senha@123',
+            'responsavel',
+            '2026-09-20',
+            [
+              { nome: 'Filho A', dataNascimento: '2015-01-01' },
+              { nome: ' ', dataNascimento: '2015-01-01' },
+              { nome: 'Filho B', dataNascimento: '2016-02-02' },
+            ]
+          );
+          setSignupComFilhosResult(result.error ?? 'ok');
+        }}
+      >
+        <Text>sign-up-com-filhos</Text>
+      </Pressable>
+      <Text>{signupComFilhosResult}</Text>
+      <Pressable
+        onPress={async () => {
+          const result = await adicionarFilho('Outro Filho', '2015-05-05');
+          setAdicionarFilhoResult(result.error ?? 'filho-adicionado');
+        }}
+      >
+        <Text>adicionar-filho</Text>
+      </Pressable>
+      <Text>{adicionarFilhoResult}</Text>
       <Pressable
         onPress={async () => {
           const result = await requestPasswordReset('prof@escola.com');
@@ -132,7 +177,8 @@ describe('AuthProvider', () => {
     mockStopAutoRefresh.mockReset();
     mockUnsubscribe.mockReset();
     mockPapelSingle.mockReset();
-    mockAlunoMaybeSingle.mockReset();
+    mockAlunosQuery.mockReset();
+    mockRpc.mockReset();
     mockAppStateAddEventListener.mockClear();
 
     mockGetSession.mockResolvedValue({ data: { session: null } });
@@ -145,7 +191,11 @@ describe('AuthProvider', () => {
     mockUpdateUser.mockResolvedValue({ error: null });
     mockSignOut.mockResolvedValue(undefined);
     mockPapelSingle.mockResolvedValue({ data: { papel: 'aluno', ativo: true }, error: null });
-    mockAlunoMaybeSingle.mockResolvedValue({ data: null, error: null });
+    mockAlunosQuery.mockResolvedValue({ data: [], error: null });
+    // Default genérico pra qualquer RPC (meus_vinculos_pendentes disparado
+    // sozinho ao logar, entre outras) — testes que exercitam uma RPC
+    // específica (adicionar_meu_filho etc.) sobrescrevem com mockImplementation.
+    mockRpc.mockResolvedValue({ data: [], error: null });
   });
 
   it('loads the current session and exposes ready state', async () => {
@@ -258,6 +308,27 @@ describe('AuthProvider', () => {
     expect(mockSignOut).toHaveBeenCalledTimes(1);
   });
 
+  // Falha fechado: se a consulta que confirma "ativo" der erro (ex.: rede
+  // instável logo após autenticar), não deixamos entrar só porque não deu
+  // pra confirmar — uma instabilidade transitória não pode virar bypass do
+  // bloqueio de conta desativada.
+  it('blocks sign-in when the active-account check fails instead of letting it through', async () => {
+    mockPapelSingle.mockResolvedValueOnce({ data: null, error: new Error('network error') });
+
+    await render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>
+    );
+
+    await fireEvent.press(screen.getByText('sign-in'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Não foi possível confirmar sua conta agora. Tente novamente em instantes.')).toBeTruthy();
+    });
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+  });
+
   // Reaproveita o polling de 60s da inatividade (AuthProvider.tsx) pra
   // também pegar uma desativação feita pelo dono enquanto a sessão de um
   // usuário já estava aberta — sem isso, só cairia no próximo login.
@@ -341,6 +412,81 @@ describe('AuthProvider', () => {
     expect(
       await screen.findByText('Não foi possível concluir o cadastro agora. Tente novamente em instantes.')
     ).toBeTruthy();
+  });
+
+  it('sends trimmed, non-empty children names as metadata on sign up', async () => {
+    await render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>
+    );
+
+    await fireEvent.press(screen.getByText('sign-up-com-filhos'));
+
+    expect(await screen.findByText('ok')).toBeTruthy();
+    expect(mockSignUp).toHaveBeenCalledWith({
+      email: 'mae@escola.com',
+      password: 'Senha@123',
+      options: {
+        data: {
+          nome: 'Mae Ana',
+          titular: 'responsavel',
+          consentimento_versao: '2026-09-20',
+          filhos: [
+            { nome: 'Filho A', data_nascimento: '2015-01-01' },
+            { nome: ' ', data_nascimento: '2015-01-01' },
+            { nome: 'Filho B', data_nascimento: '2016-02-02' },
+          ],
+        },
+      },
+    });
+  });
+
+  it('adds a child to the account and refreshes the linked-students list', async () => {
+    mockRpc.mockImplementation((fnName: string) => {
+      if (fnName === 'adicionar_meu_filho') return Promise.resolve({ data: 'novo-aluno-id', error: null });
+      return Promise.resolve({ data: [], error: null });
+    });
+    mockGetSession.mockResolvedValue({ data: { session: { user: { id: 'user-1', email: 'mae@escola.com' } } } });
+    mockAlunosQuery.mockResolvedValueOnce({ data: [], error: null }).mockResolvedValueOnce({
+      data: [{ id: 'novo-aluno-id', nome: 'Filho A', modulo: 1, data_nascimento: null, responsavel_nome: null, responsavel_telefone: null }],
+      error: null,
+    });
+
+    await render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>
+    );
+
+    await fireEvent.press(screen.getByText('adicionar-filho'));
+
+    expect(await screen.findByText('filho-adicionado')).toBeTruthy();
+    expect(mockRpc).toHaveBeenCalledWith('adicionar_meu_filho', {
+      p_nome: 'Outro Filho',
+      p_data_nascimento: '2015-05-05',
+    });
+    expect(await screen.findByText('Filho A')).toBeTruthy();
+  });
+
+  it('surfaces the RPC error message when adding a child fails', async () => {
+    mockGetSession.mockResolvedValue({ data: { session: { user: { id: 'user-1', email: 'mae@escola.com' } } } });
+    mockRpc.mockImplementation((fnName: string) => {
+      if (fnName === 'adicionar_meu_filho') {
+        return Promise.resolve({ data: null, error: { message: 'Informe o nome do filho.' } });
+      }
+      return Promise.resolve({ data: [], error: null });
+    });
+
+    await render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>
+    );
+
+    await fireEvent.press(screen.getByText('adicionar-filho'));
+
+    expect(await screen.findByText('Informe o nome do filho.')).toBeTruthy();
   });
 
   it('requests password reset email', async () => {
@@ -471,7 +617,7 @@ describe('AuthProvider', () => {
     jest.useRealTimers();
   });
 
-  // meuPapel/meuAluno são configurados via mockPapelSingle/mockAlunoMaybeSingle
+  // meuPapel/meusAlunos são configurados via mockPapelSingle/mockAlunosQuery
   // em todos os testes acima, mas nunca tinham sido verificados — são
   // exatamente os valores que decidem qual ramo de UI ([id].tsx, por
   // exemplo) o app mostra pra cada usuário.
@@ -510,15 +656,17 @@ describe('AuthProvider', () => {
       data: { session: { user: { id: 'user-1', email: 'aluna@escola.com' } } },
     });
     mockPapelSingle.mockResolvedValueOnce({ data: { papel: 'aluno', ativo: true }, error: null });
-    mockAlunoMaybeSingle.mockResolvedValueOnce({
-      data: {
-        id: 'aluno-1',
-        nome: 'Ana',
-        modulo: 1,
-        data_nascimento: null,
-        responsavel_nome: null,
-        responsavel_telefone: null,
-      },
+    mockAlunosQuery.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'aluno-1',
+          nome: 'Ana',
+          modulo: 1,
+          data_nascimento: null,
+          responsavel_nome: null,
+          responsavel_telefone: null,
+        },
+      ],
       error: null,
     });
 
@@ -529,26 +677,52 @@ describe('AuthProvider', () => {
     );
 
     expect(await screen.findByText('Ana')).toBeTruthy();
+  });
+
+  // Regressão: telas como minha-evolucao.tsx faziam `if (meusAlunos.length
+  // === 0) <spinner>` pra cobrir "ainda buscando" — mas pra quem se
+  // cadastrou sozinho e nunca foi vinculado a um aluno, a busca sempre
+  // resolve pra lista vazia, então o spinner nunca saía da tela (loading
+  // infinito). meusAlunosCarregado precisa virar true mesmo sem nenhum
+  // vínculo, pra essas telas saberem que já é hora de mostrar uma mensagem
+  // em vez de continuar girando.
+  it('marks the student record as loaded even when no student is linked yet', async () => {
+    mockGetSession.mockResolvedValueOnce({
+      data: { session: { user: { id: 'user-1', email: 'recem-cadastrado@escola.com' } } },
+    });
+    mockPapelSingle.mockResolvedValueOnce({ data: { papel: 'aluno', ativo: true }, error: null });
+    mockAlunosQuery.mockResolvedValueOnce({ data: [], error: null });
+
+    await render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>
+    );
+
+    expect(await screen.findByText('aluno-carregado')).toBeTruthy();
+    expect(screen.getByText('sem-aluno')).toBeTruthy();
   });
 
   // responsavel (supabase/migrations/0029-0030): conta que o vínculo por
   // e-mail (0020) liga a um registro de aluno em nome do responsável, não
   // do próprio atleta. Acesso precisa ser idêntico ao de aluno — inclusive
-  // carregar o mesmo `meuAluno`, já que nenhuma RLS distingue os dois papéis.
+  // carregar o mesmo `meusAlunos`, já que nenhuma RLS distingue os dois papéis.
   it('loads the linked student record when the role is responsavel', async () => {
     mockGetSession.mockResolvedValueOnce({
       data: { session: { user: { id: 'user-1', email: 'responsavel@escola.com' } } },
     });
     mockPapelSingle.mockResolvedValueOnce({ data: { papel: 'responsavel', ativo: true }, error: null });
-    mockAlunoMaybeSingle.mockResolvedValueOnce({
-      data: {
-        id: 'aluno-1',
-        nome: 'Ana',
-        modulo: 1,
-        data_nascimento: null,
-        responsavel_nome: null,
-        responsavel_telefone: null,
-      },
+    mockAlunosQuery.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'aluno-1',
+          nome: 'Ana',
+          modulo: 1,
+          data_nascimento: null,
+          responsavel_nome: null,
+          responsavel_telefone: null,
+        },
+      ],
       error: null,
     });
 
@@ -561,11 +735,44 @@ describe('AuthProvider', () => {
     expect(await screen.findByText('Ana')).toBeTruthy();
   });
 
-  it('does not look up a student record for non-aluno, non-responsavel roles', async () => {
+  // Regressão (supabase/migrations/0033 + docs/product/professor-como-aluno.md):
+  // uma conta pode ter mais de um aluno vinculado — responsável por vários
+  // filhos, ou aluno adulto que também é responsável por outro. A busca não
+  // filtra mais por papel, então mesmo um professor é consultado (e um
+  // responsável com 2 filhos recebe os 2).
+  it('loads every linked student, regardless of role or how many are linked', async () => {
+    mockGetSession.mockResolvedValueOnce({
+      data: { session: { user: { id: 'user-1', email: 'responsavel@escola.com' } } },
+    });
+    mockPapelSingle.mockResolvedValueOnce({ data: { papel: 'responsavel', ativo: true }, error: null });
+    mockAlunosQuery.mockResolvedValueOnce({
+      data: [
+        { id: 'aluno-1', nome: 'Ana', modulo: 1, data_nascimento: null, responsavel_nome: null, responsavel_telefone: null },
+        { id: 'aluno-2', nome: 'Beto', modulo: 2, data_nascimento: null, responsavel_nome: null, responsavel_telefone: null },
+      ],
+      error: null,
+    });
+
+    await render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>
+    );
+
+    expect(await screen.findByText('Ana, Beto')).toBeTruthy();
+  });
+
+  it('also looks up a linked student record for dono/professor roles (professor-como-aluno)', async () => {
     mockGetSession.mockResolvedValueOnce({
       data: { session: { user: { id: 'user-1', email: 'prof@escola.com' } } },
     });
     mockPapelSingle.mockResolvedValueOnce({ data: { papel: 'professor', ativo: true }, error: null });
+    mockAlunosQuery.mockResolvedValueOnce({
+      data: [
+        { id: 'aluno-3', nome: 'Prof Ana', modulo: 3, data_nascimento: null, responsavel_nome: null, responsavel_telefone: null },
+      ],
+      error: null,
+    });
 
     await render(
       <AuthProvider>
@@ -574,8 +781,7 @@ describe('AuthProvider', () => {
     );
 
     expect(await screen.findByText('professor')).toBeTruthy();
-    expect(mockAlunoMaybeSingle).not.toHaveBeenCalled();
-    expect(screen.getByText('sem-aluno')).toBeTruthy();
+    expect(await screen.findByText('Prof Ana')).toBeTruthy();
   });
 
   it('returns invalid current password error on reauth failure', async () => {

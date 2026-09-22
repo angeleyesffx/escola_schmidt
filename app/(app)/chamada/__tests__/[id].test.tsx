@@ -104,7 +104,7 @@ describe('ChamadaDetalhe', () => {
     mockUseAuth.mockReturnValue({
       session: { user: { id: 'user-1' } },
       meuPapel: 'professor',
-      meuAluno: null,
+      meusAlunos: [],
     });
     mockGetAulaRecorrente.mockResolvedValue({
       id: 'rec-1',
@@ -524,7 +524,7 @@ describe('ChamadaDetalhe', () => {
       mockUseAuth.mockReturnValue({
         session: { user: { id: 'aluno-user-1' } },
         meuPapel: 'aluno',
-        meuAluno,
+        meusAlunos: [meuAluno],
       });
       // hoje, pela hora do sistema fixada no beforeEach externo (2026-09-18)
       mockSearchParams.data = '2026-09-18';
@@ -545,7 +545,7 @@ describe('ChamadaDetalhe', () => {
       mockUseAuth.mockReturnValue({
         session: { user: { id: 'aluno-user-1' } },
         meuPapel: 'aluno',
-        meuAluno: { ...meuAluno, modulo: 2 },
+        meusAlunos: [{ ...meuAluno, modulo: 2 }],
       });
 
       await render(<ChamadaDetalhe />);
@@ -559,7 +559,7 @@ describe('ChamadaDetalhe', () => {
       mockUseAuth.mockReturnValue({
         session: { user: { id: 'aluno-user-1' } },
         meuPapel: 'aluno',
-        meuAluno: null,
+        meusAlunos: [],
       });
 
       await render(<ChamadaDetalhe />);

@@ -43,6 +43,24 @@ export async function atualizarTipoEvento(
   if (error) throw error;
 }
 
+// eventos.tipo_id referencia tipos_evento com on delete restrict (0003) — o
+// próprio banco já bloqueia a exclusão quando em uso; contar aqui só evita
+// deixar o erro cru de FK chegar na tela, mesmo espírito de getUsoSlotGrade
+// (src/features/chamada/api.ts).
+export async function getUsoTipoEvento(id: string) {
+  const { count, error } = await supabase
+    .from('eventos')
+    .select('id', { count: 'exact', head: true })
+    .eq('tipo_id', id);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+export async function excluirTipoEvento(id: string) {
+  const { error } = await supabase.from('tipos_evento').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function getTiposEvento() {
   const { data, error } = await supabase
     .from('tipos_evento')

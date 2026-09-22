@@ -45,7 +45,7 @@ describe('ListaChamada', () => {
   });
 
   it('dono vê todas as turmas do dia, mesmo sem nenhum vínculo em professores_aula', async () => {
-    mockUseAuth.mockReturnValue({ session: { user: { id: 'dono-1' } }, meuPapel: 'dono' });
+    mockUseAuth.mockReturnValue({ session: { user: { id: 'dono-1' } }, meuPapel: 'dono', meusAlunos: [] });
 
     render(<ListaChamada />);
 
@@ -55,7 +55,7 @@ describe('ListaChamada', () => {
   });
 
   it('professor só vê as turmas que assumiu em "Meus módulos"', async () => {
-    mockUseAuth.mockReturnValue({ session: { user: { id: 'prof-1' } }, meuPapel: 'professor' });
+    mockUseAuth.mockReturnValue({ session: { user: { id: 'prof-1' } }, meuPapel: 'professor', meusAlunos: [] });
     mockGetResponsabilidadesProfessor.mockResolvedValue([
       { id: 'resp-1', aula_recorrente_id: 'rec-1', modulo: 1 },
     ]);
@@ -68,7 +68,7 @@ describe('ListaChamada', () => {
   });
 
   it('professor sem nenhum módulo assumido vê a lista vazia, não a grade inteira', async () => {
-    mockUseAuth.mockReturnValue({ session: { user: { id: 'prof-2' } }, meuPapel: 'professor' });
+    mockUseAuth.mockReturnValue({ session: { user: { id: 'prof-2' } }, meuPapel: 'professor', meusAlunos: [] });
     mockGetResponsabilidadesProfessor.mockResolvedValue([]);
 
     render(<ListaChamada />);
@@ -79,7 +79,7 @@ describe('ListaChamada', () => {
   });
 
   it('toca numa turma permitida e navega pra chamada dela', async () => {
-    mockUseAuth.mockReturnValue({ session: { user: { id: 'prof-1' } }, meuPapel: 'professor' });
+    mockUseAuth.mockReturnValue({ session: { user: { id: 'prof-1' } }, meuPapel: 'professor', meusAlunos: [] });
     mockGetResponsabilidadesProfessor.mockResolvedValue([
       { id: 'resp-1', aula_recorrente_id: 'rec-1', modulo: 1 },
     ]);
@@ -92,7 +92,7 @@ describe('ListaChamada', () => {
   });
 
   it('aluno é redirecionado, nunca vê a lista', async () => {
-    mockUseAuth.mockReturnValue({ session: { user: { id: 'aluno-1' } }, meuPapel: 'aluno' });
+    mockUseAuth.mockReturnValue({ session: { user: { id: 'aluno-1' } }, meuPapel: 'aluno', meusAlunos: [] });
 
     render(<ListaChamada />);
 

@@ -30,7 +30,7 @@ const ROTULO_PAPEL: Record<string, string> = {
 export function QuickMenu({ variante = 'barra' }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { session, meuPapel, meuAluno, signOut } = useAuth();
+  const { session, meuPapel, meusAlunos, signOut } = useAuth();
   const [montado, setMontado] = useState(false);
   const [aberto, setAberto] = useState(false);
   const translateX = useRef(new Animated.Value(LARGURA_DRAWER)).current;
@@ -46,8 +46,13 @@ export function QuickMenu({ variante = 'barra' }: Props) {
     });
   }, [aberto, montado, translateX]);
 
-  const souAluno = (meuPapel === 'aluno' || meuPapel === 'responsavel');
+  // Papel e vínculo são independentes (docs/product/professor-como-aluno.md):
+  // um professor/dono que também treina tem `meusAlunos` preenchido e deve
+  // ganhar os itens de aluno sem perder os de equipe.
+  const souPapelAluno = meuPapel === 'aluno' || meuPapel === 'responsavel';
   const souEquipe = meuPapel === 'dono' || meuPapel === 'professor';
+  const temAluno = meusAlunos.length > 0;
+  const mostrarItensAluno = souPapelAluno || temAluno;
 
   const itens: ItemMenu[] = [
     { label: 'Início', href: '/', icon: uiAssets.card.inicio },
@@ -65,12 +70,15 @@ export function QuickMenu({ variante = 'barra' }: Props) {
     itens.push({ label: 'Configurações', href: '/configuracoes', icon: uiAssets.card.configuracoes });
   }
 
-  if (souAluno) {
+  if (mostrarItensAluno) {
     itens.push({ label: 'Minha evolução', href: '/minha-evolucao', icon: uiAssets.card.desempenho });
-    if (meuAluno) {
+    // Atalho direto só quando não há ambiguidade — com mais de um aluno
+    // vinculado (responsável por vários filhos), a escolha de qual frequência
+    // ver acontece dentro da própria tela de evolução/perfil, não aqui.
+    if (meusAlunos.length === 1) {
       itens.push({
         label: 'Frequência',
-        href: `/alunos/${meuAluno.id}/frequencia`,
+        href: `/alunos/${meusAlunos[0].id}/frequencia`,
         icon: uiAssets.card.frequencia,
       });
     }
@@ -140,12 +148,12 @@ export function QuickMenu({ variante = 'barra' }: Props) {
               <TouchableOpacity style={styles.perfilRow} onPress={() => navegar('/perfil')}>
                 <View style={styles.perfilAvatar}>
                   <Text style={styles.perfilAvatarTexto}>
-                    {(meuAluno?.nome ?? session.user.email ?? '?').charAt(0).toUpperCase()}
+                    {(meusAlunos[0]?.nome ?? session.user.email ?? '?').charAt(0).toUpperCase()}
                   </Text>
                 </View>
                 <View style={styles.perfilTextos}>
                   <Text style={styles.perfilNome} numberOfLines={1}>
-                    {meuAluno?.nome ?? session.user.email}
+                    {meusAlunos[0]?.nome ?? session.user.email}
                   </Text>
                   <Text style={styles.perfilPapel} numberOfLines={1}>
                     {meuPapel ? ROTULO_PAPEL[meuPapel] ?? meuPapel : session.user.email}
