@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { uiAssets } from '../constants/uiAssets';
 import { useAuth } from '../features/auth/AuthProvider';
+import { getAvatarUrl, getMeuPerfil, type MeuPerfil } from '../features/perfil/api';
 import { PersonIcon } from './PersonIcon';
 import { colors, radius, spacing, touchTarget, type } from '../constants/theme';
 
@@ -31,9 +32,30 @@ export function QuickMenu({ variante = 'barra' }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { session, meuPapel, meusAlunos, signOut } = useAuth();
+  const [perfil, setPerfil] = useState<MeuPerfil | null>(null);
   const [montado, setMontado] = useState(false);
   const [aberto, setAberto] = useState(false);
   const translateX = useRef(new Animated.Value(LARGURA_DRAWER)).current;
+
+  useEffect(() => {
+    let vigente = true;
+    if (!session?.user.id) {
+      setPerfil(null);
+      return () => {
+        vigente = false;
+      };
+    }
+
+    getMeuPerfil(session.user.id)
+      .then((dados) => {
+        if (vigente) setPerfil(dados);
+      })
+      .catch((erro) => console.error(erro));
+
+    return () => {
+      vigente = false;
+    };
+  }, [session?.user.id]);
 
   useEffect(() => {
     if (!montado) return;
@@ -109,6 +131,8 @@ export function QuickMenu({ variante = 'barra' }: Props) {
     inputRange: [0, LARGURA_DRAWER],
     outputRange: [1, 0],
   });
+  const avatarUrl = getAvatarUrl(perfil?.avatar_path ?? null);
+  const nomePerfil = perfil?.nome || session?.user.email || '?';
 
   return (
     <View>
@@ -135,7 +159,15 @@ export function QuickMenu({ variante = 'barra' }: Props) {
           </Animated.View>
 
           <Animated.View
-            style={[styles.drawer, { paddingTop: insets.top + spacing.lg, transform: [{ translateX }] }]}
+            style={[
+              styles.drawer,
+              {
+                paddingTop: insets.top + spacing.lg,
+                paddingBottom: spacing.lg + insets.bottom,
+                paddingRight: spacing.lg + insets.right,
+                transform: [{ translateX }],
+              },
+            ]}
           >
             <View style={styles.drawerTopo}>
               <Text style={styles.menuTitle}>Menu</Text>
@@ -147,13 +179,15 @@ export function QuickMenu({ variante = 'barra' }: Props) {
             {session ? (
               <TouchableOpacity style={styles.perfilRow} onPress={() => navegar('/perfil')}>
                 <View style={styles.perfilAvatar}>
-                  <Text style={styles.perfilAvatarTexto}>
-                    {(meusAlunos[0]?.nome ?? session.user.email ?? '?').charAt(0).toUpperCase()}
-                  </Text>
+                  {avatarUrl ? (
+                    <Image source={{ uri: avatarUrl }} style={styles.perfilAvatarImagem} />
+                  ) : (
+                    <Text style={styles.perfilAvatarTexto}>{nomePerfil.charAt(0).toUpperCase()}</Text>
+                  )}
                 </View>
                 <View style={styles.perfilTextos}>
                   <Text style={styles.perfilNome} numberOfLines={1}>
-                    {meusAlunos[0]?.nome ?? session.user.email}
+                    {nomePerfil}
                   </Text>
                   <Text style={styles.perfilPapel} numberOfLines={1}>
                     {meuPapel ? ROTULO_PAPEL[meuPapel] ?? meuPapel : session.user.email}
@@ -246,7 +280,6 @@ const styles = StyleSheet.create({
     maxWidth: '85%',
     backgroundColor: '#EAF8FB',
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg,
     shadowColor: '#000',
     shadowOffset: { width: -4, height: 0 },
     shadowOpacity: 0.18,
@@ -302,6 +335,10 @@ const styles = StyleSheet.create({
     fontFamily: type.title.fontFamily,
     fontSize: 18,
   },
+  perfilAvatarImagem: {
+    width: '100%',
+    height: '100%',
+  },
   perfilTextos: {
     flex: 1,
   },
@@ -340,9 +377,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.md,
+    minHeight: 96,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.lg,
     backgroundColor: 'rgba(255,255,255,0.45)',
   },
   itemCard: {
@@ -355,9 +393,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   itemCardSair: {
-    width: 42,
-    height: 42,
-    borderRadius: radius.pill,
+    width: 74,
+    height: 74,
+    borderRadius: 26,
     backgroundColor: '#D8F3FA',
     alignItems: 'center',
     justifyContent: 'center',
@@ -371,8 +409,8 @@ const styles = StyleSheet.create({
     height: 80,
   },
   itemIconeSair: {
-    width: 26,
-    height: 26,
+    width: 58,
+    height: 58,
   },
   drawerRodape: {
     paddingTop: spacing.sm,
@@ -391,5 +429,7 @@ const styles = StyleSheet.create({
   sairTexto: {
     color: colors.danger,
     textAlign: 'left',
+    fontFamily: type.subtitle.fontFamily,
+    fontSize: type.title.fontSize,
   },
 });

@@ -92,6 +92,10 @@ grant execute on function horarios_livres_particular(uuid, date) to authenticate
 
 alter table disponibilidade_particular enable row level security;
 
+grant select on public.disponibilidade_particular to anon;
+grant select, insert, update, delete on public.disponibilidade_particular to authenticated;
+grant select, insert, update, delete on public.disponibilidade_particular to service_role;
+
 -- Mesmas policies de antes (0016) — só o formato dos dados embaixo mudou.
 create policy disponibilidade_leitura on disponibilidade_particular
   for select using (auth.uid() is not null);

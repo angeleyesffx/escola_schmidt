@@ -19,6 +19,23 @@ export async function getUsuarios() {
   return data as Usuario[];
 }
 
+export async function getUsuariosPagina(pagina: number, tamanho = 25) {
+  const inicio = pagina * tamanho;
+  const fim = inicio + tamanho - 1;
+  const { data, error, count } = await supabase
+    .from('perfis')
+    .select('id, nome, papel, telefone, ativo, criado_em', { count: 'exact' })
+    .order('nome')
+    .range(inicio, fim);
+  if (error) throw error;
+  const total = count ?? data?.length ?? 0;
+  return {
+    usuarios: (data ?? []) as Usuario[],
+    total,
+    temMais: fim + 1 < total,
+  };
+}
+
 export async function getUsuario(id: string) {
   const { data, error } = await supabase
     .from('perfis')

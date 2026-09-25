@@ -1,10 +1,11 @@
 import { useCallback, useState } from 'react';
 import { Redirect, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, FlatList, Image, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { getAluno, type Aluno } from '../../../../src/features/alunos/api';
 import { useAuth } from '../../../../src/features/auth/AuthProvider';
-import { getAvaliacoesEvolucaoAluno, getHistoricoNivelAluno } from '../../../../src/features/evolucao/api';
+import { getAvaliacoesEvolucaoAluno, getCriteriosAvaliacao, getHistoricoNivelAluno } from '../../../../src/features/evolucao/api';
+import { exportarAvaliacaoPdf } from '../../../../src/features/evolucao/exportAvaliacaoPdf';
 import type {
   AvaliacaoEvolucaoResumo,
   HistoricoNivelEvolucao,
@@ -13,8 +14,9 @@ import type {
 import { paraBR } from '../../../../src/lib/dataBR';
 import { PageHeader } from '../../../../src/components/PageHeader';
 import { Footer } from '../../../../src/components/Footer';
+import { WebModal } from '../../../../src/components/WebModal';
 import { uiAssets } from '../../../../src/constants/uiAssets';
-import { colors, radius, spacing, type } from '../../../../src/constants/theme';
+import { colors, radius, spacing, touchTarget, type } from '../../../../src/constants/theme';
 
 // Repropositada em 2026-09-20 (Fase 4, passo 4 de
 // docs/product/evolucao-vs-desempenho.md): esta tela era um duplicata órfã
@@ -89,6 +91,12 @@ export default function JornadaAluno() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Exportação em PDF é por linha da timeline agora — cada sessão de
+  // avaliação (data) tem seu próprio botão "Exportar avaliação", sem
+  // dropdown/seleção separada.
+  const [exportandoData, setExportandoData] = useState<string | null>(null);
+  const [erroExportacaoData, setErroExportacaoData] = useState<string | null>(null);
+
   const carregar = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -115,18 +123,40 @@ export default function JornadaAluno() {
     }, [carregar])
   );
 
+  async function exportarPdf(data: string, itens: AvaliacaoEvolucaoResumo[]) {
+    if (!aluno) return;
+
+    setExportandoData(data);
+    setErroExportacaoData(null);
+    try {
+      const criteriosPorItem = await Promise.all(itens.map((item) => getCriteriosAvaliacao(item.id)));
+      await exportarAvaliacaoPdf(
+        data,
+        itens.map((avaliacao, indice) => ({ avaliacao, criterios: criteriosPorItem[indice] })),
+        aluno
+      );
+    } catch (err) {
+      console.error(err);
+      setErroExportacaoData(data);
+    } finally {
+      setExportandoData(null);
+    }
+  }
+
   if (souAlunoOuResponsavel && !meusAlunosCarregado) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
+      <WebModal>
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </WebModal>
     );
   }
 
   if (souAlunoOuResponsavel) {
     if (meusAlunos.length === 0) {
       return (
-        <>
+        <WebModal>
           <PageHeader titulo="Jornada" />
           <View style={styles.center}>
             <Text style={[type.body, styles.subtitle]}>
@@ -134,7 +164,7 @@ export default function JornadaAluno() {
             </Text>
           </View>
           <Footer />
-        </>
+        </WebModal>
       );
     }
     // Vários filhos vinculados: acesso é por vínculo com ESTE id da URL, não
@@ -146,12 +176,12 @@ export default function JornadaAluno() {
 
   if (loading) {
     return (
-      <>
+      <WebModal>
         <PageHeader titulo="Jornada" />
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
         </View>
-      </>
+      </WebModal>
     );
   }
 
@@ -173,7 +203,7 @@ export default function JornadaAluno() {
   );
 
   return (
-    <>
+    <WebModal>
       <PageHeader titulo={aluno?.nome ?? 'Jornada'} />
       <View style={styles.container}>
         <FlatList
@@ -194,7 +224,26 @@ export default function JornadaAluno() {
                   {!ultimo ? <View style={styles.conector} /> : null}
                 </View>
                 <View style={styles.conteudo}>
-                  <Text style={[type.caption, styles.dataTexto]}>{paraBR(item.data)}</Text>
+                  <View style={styles.linhaData}>
+                    <Text style={[type.caption, styles.dataTexto]}>{paraBR(item.data)}</Text>
+                    {item.tipo === 'avaliacao' ? (
+                      <TouchableOpacity
+                        testID={`jornada-botao-exportar-${item.data}`}
+                        style={[
+                          styles.botaoExportarLinha,
+                          exportandoData === item.data && styles.botaoExportarDesabilitado,
+                        ]}
+                        onPress={() => exportarPdf(item.data, item.itens)}
+                        disabled={exportandoData === item.data}
+                      >
+                        {exportandoData === item.data ? (
+                          <ActivityIndicator color={colors.primary} size="small" />
+                        ) : (
+                          <Text style={styles.botaoExportarLinhaTexto}>Exportar avaliação</Text>
+                        )}
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
                   {item.tipo === 'nivel' ? (
                     <View style={[styles.cartao, styles.cartaoNivel]}>
                       <Text style={type.subtitle}>{labelTipoHistorico(item.evento.tipo)}</Text>
@@ -215,6 +264,9 @@ export default function JornadaAluno() {
                           </View>
                         ))}
                       </View>
+                      {erroExportacaoData === item.data ? (
+                        <Text style={[type.body, styles.error]}>Erro ao gerar o PDF. Tente novamente.</Text>
+                      ) : null}
                     </View>
                   )}
                 </View>
@@ -224,7 +276,7 @@ export default function JornadaAluno() {
         />
       </View>
       <Footer />
-    </>
+    </WebModal>
   );
 }
 
@@ -277,6 +329,23 @@ const styles = StyleSheet.create({
     color: colors.danger,
     marginTop: spacing.sm,
   },
+  botaoExportarLinha: {
+    height: touchTarget * 0.55,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  botaoExportarDesabilitado: {
+    opacity: 0.6,
+  },
+  botaoExportarLinhaTexto: {
+    ...type.caption,
+    color: colors.primary,
+    fontFamily: type.label.fontFamily,
+  },
   list: {
     paddingBottom: spacing.xl,
   },
@@ -314,6 +383,12 @@ const styles = StyleSheet.create({
   },
   dataTexto: {
     color: colors.textMuted,
+  },
+  linhaData: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
     marginBottom: spacing.xs,
   },
   cartao: {

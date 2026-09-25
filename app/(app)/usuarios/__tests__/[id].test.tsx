@@ -1,6 +1,7 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react-native';
 
 import UsuarioDetalhe from '../[id]';
+import { getAlunos, vincularPerfil } from '../../../../src/features/alunos/api';
 import { atualizarAtivo, atualizarPapel, getUsuario } from '../../../../src/features/usuarios/api';
 
 const mockUseAuth = jest.fn();
@@ -28,6 +29,12 @@ jest.mock('../../../../src/features/usuarios/api', () => ({
   atualizarAtivo: jest.fn(),
 }));
 
+jest.mock('../../../../src/features/alunos/api', () => ({
+  getAlunos: jest.fn(),
+  vincularPerfil: jest.fn(),
+  desvincularPerfil: jest.fn(),
+}));
+
 // Troca de papel/status agora passa por confirmação (evita mudança de
 // acesso com um toque só) — o teste simula a pessoa confirmando.
 jest.mock('../../../../src/lib/confirmar', () => ({
@@ -37,6 +44,8 @@ jest.mock('../../../../src/lib/confirmar', () => ({
 const mockGetUsuario = getUsuario as jest.MockedFunction<typeof getUsuario>;
 const mockAtualizarPapel = atualizarPapel as jest.MockedFunction<typeof atualizarPapel>;
 const mockAtualizarAtivo = atualizarAtivo as jest.MockedFunction<typeof atualizarAtivo>;
+const mockGetAlunos = getAlunos as jest.MockedFunction<typeof getAlunos>;
+const mockVincularPerfil = vincularPerfil as jest.MockedFunction<typeof vincularPerfil>;
 
 const USUARIO_BASE = {
   id: 'user-2',
@@ -57,6 +66,10 @@ describe('UsuarioDetalhe', () => {
     mockAtualizarPapel.mockResolvedValue(undefined);
     mockAtualizarAtivo.mockReset();
     mockAtualizarAtivo.mockResolvedValue(undefined);
+    mockGetAlunos.mockReset();
+    mockGetAlunos.mockResolvedValue([]);
+    mockVincularPerfil.mockReset();
+    mockVincularPerfil.mockResolvedValue(undefined);
   });
 
   it('redirects away when the signed-in user is not the owner', async () => {
@@ -86,6 +99,32 @@ describe('UsuarioDetalhe', () => {
 
     await waitFor(() => {
       expect(mockAtualizarAtivo).toHaveBeenCalledWith('user-2', false);
+    });
+  });
+
+  it('allows a professor account to be registered as an aluno', async () => {
+    mockGetUsuario.mockResolvedValue({ ...USUARIO_BASE, papel: 'professor' });
+    mockGetAlunos.mockResolvedValue([
+      {
+        id: 'aluno-1',
+        nome: 'Professora Atleta',
+        data_nascimento: '1990-01-01',
+        modulo: 4,
+        responsavel_nome: null,
+        responsavel_telefone: null,
+        responsavel_email: null,
+        ativo: true,
+        perfil_id: null,
+      },
+    ]);
+
+    await render(<UsuarioDetalhe />);
+
+    await fireEvent.press(await screen.findByText('Registrar como aluno'));
+    await fireEvent.press(screen.getByText('+ Professora Atleta'));
+
+    await waitFor(() => {
+      expect(mockVincularPerfil).toHaveBeenCalledWith('aluno-1', 'user-2');
     });
   });
 

@@ -1,6 +1,6 @@
 import { Redirect } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
   adicionarResponsabilidade,
@@ -15,6 +15,7 @@ import { useAuth } from '../../../src/features/auth/AuthProvider';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
+import { WebModal } from '../../../src/components/WebModal';
 import { Chip } from '../../../src/components/Chip';
 import { Dropdown } from '../../../src/components/Dropdown';
 import { colors, radius, spacing, type } from '../../../src/constants/theme';
@@ -97,9 +98,9 @@ export default function MeusModulos() {
   }
 
   return (
-    <>
+    <WebModal>
       <PageHeader titulo={souDono ? 'Módulos por professor' : 'Meus módulos'} />
-      <View style={styles.container}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
         {souDono ? (
           <>
             <Text style={[type.label, styles.rotulo]}>Professor</Text>
@@ -155,18 +156,21 @@ export default function MeusModulos() {
             ))}
           </View>
         )}
-      </View>
+      </ScrollView>
       <Footer />
-    </>
+    </WebModal>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  scroll: {
     flex: 1,
+  },
+  container: {
     backgroundColor: colors.background,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xl,
+    paddingBottom: spacing.xxl,
   },
   subtitle: {
     color: colors.textMuted,

@@ -1,7 +1,7 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react-native';
 
 import UsuariosIndex from '../index';
-import { getUsuarios } from '../../../../src/features/usuarios/api';
+import { getUsuariosPagina } from '../../../../src/features/usuarios/api';
 
 const mockPush = jest.fn();
 const mockUseAuth = jest.fn();
@@ -23,10 +23,10 @@ jest.mock('../../../../src/features/auth/AuthProvider', () => ({
 }));
 
 jest.mock('../../../../src/features/usuarios/api', () => ({
-  getUsuarios: jest.fn(),
+  getUsuariosPagina: jest.fn(),
 }));
 
-const mockGetUsuarios = getUsuarios as jest.MockedFunction<typeof getUsuarios>;
+const mockGetUsuarios = getUsuariosPagina as jest.MockedFunction<typeof getUsuariosPagina>;
 
 describe('UsuariosIndex', () => {
   beforeEach(() => {
@@ -34,7 +34,7 @@ describe('UsuariosIndex', () => {
     mockUseAuth.mockReset();
     mockUseAuth.mockReturnValue({ meuPapel: 'dono', meusAlunos: [] });
     mockGetUsuarios.mockReset();
-    mockGetUsuarios.mockResolvedValue([]);
+    mockGetUsuarios.mockResolvedValue({ usuarios: [], total: 0, temMais: false });
   });
 
   it('redirects away when the signed-in user is not the owner', async () => {
@@ -46,7 +46,7 @@ describe('UsuariosIndex', () => {
   });
 
   it('lists users with role and status', async () => {
-    mockGetUsuarios.mockResolvedValueOnce([
+    mockGetUsuarios.mockResolvedValueOnce({ usuarios: [
       { id: 'user-1', nome: 'Ana', papel: 'dono', telefone: null, ativo: true, criado_em: '2026-01-01T00:00:00Z' },
       {
         id: 'user-2',
@@ -56,7 +56,7 @@ describe('UsuariosIndex', () => {
         ativo: false,
         criado_em: '2026-01-02T00:00:00Z',
       },
-    ]);
+    ], total: 2, temMais: false });
 
     await render(<UsuariosIndex />);
 
@@ -67,9 +67,9 @@ describe('UsuariosIndex', () => {
   });
 
   it('navigates to invite screen and to a user detail screen', async () => {
-    mockGetUsuarios.mockResolvedValueOnce([
+    mockGetUsuarios.mockResolvedValueOnce({ usuarios: [
       { id: 'user-1', nome: 'Ana', papel: 'dono', telefone: null, ativo: true, criado_em: '2026-01-01T00:00:00Z' },
-    ]);
+    ], total: 1, temMais: false });
 
     await render(<UsuariosIndex />);
 

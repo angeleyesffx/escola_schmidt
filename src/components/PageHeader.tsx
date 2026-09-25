@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import * as ExpoRouter from 'expo-router';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing, touchTarget, type } from '../constants/theme';
+import { AvatarPerfil } from './AvatarPerfil';
 import { QuickMenu } from './QuickMenu';
 
 type Props = {
@@ -19,10 +20,32 @@ type Props = {
 
 export function PageHeader({ titulo, mostrarVoltar = true, mostrarMenu = true }: Props) {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const router = ExpoRouter.useRouter();
+  const pathname = typeof ExpoRouter.usePathname === 'function' ? ExpoRouter.usePathname() : '';
+  const rotaModal =
+    pathname === '/perfil' ||
+    pathname === '/minha-evolucao' ||
+    pathname === '/confirmar-vinculo' ||
+    pathname === '/catalogo-evolucao' ||
+    pathname === '/usuarios' ||
+    pathname.startsWith('/configuracoes/') ||
+    pathname.startsWith('/eventos/') ||
+    pathname.startsWith('/usuarios/') ||
+    pathname.startsWith('/alunos/') ||
+    pathname.startsWith('/chamada/');
+  const exibirMenu = mostrarMenu && !rotaModal;
 
   return (
-    <View style={[styles.barra, { paddingTop: insets.top + spacing.md }]}>
+    <View
+      style={[
+        styles.barra,
+        {
+          paddingTop: insets.top + spacing.md,
+          paddingLeft: insets.left + spacing.md,
+          paddingRight: insets.right + spacing.md,
+        },
+      ]}
+    >
       <View style={styles.linha}>
         {mostrarVoltar ? (
           <TouchableOpacity
@@ -34,13 +57,15 @@ export function PageHeader({ titulo, mostrarVoltar = true, mostrarMenu = true }:
           >
             <Ionicons name="arrow-back" size={26} color={colors.primary} />
           </TouchableOpacity>
+        ) : exibirMenu ? (
+          <AvatarPerfil size={touchTarget} onPress={() => router.push('/perfil')} />
         ) : (
           <View style={styles.navEspaco} />
         )}
         <Text style={styles.titulo} numberOfLines={1}>
           {titulo}
         </Text>
-        {mostrarMenu ? <QuickMenu variante="barra" /> : <View style={styles.navEspaco} />}
+        {exibirMenu ? <QuickMenu variante="barra" /> : <View style={styles.navEspaco} />}
       </View>
     </View>
   );
@@ -50,7 +75,6 @@ const styles = StyleSheet.create({
   barra: {
     backgroundColor: colors.primary,
     paddingBottom: spacing.md,
-    paddingHorizontal: spacing.md,
   },
   linha: {
     flexDirection: 'row',

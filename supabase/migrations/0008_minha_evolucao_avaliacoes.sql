@@ -325,6 +325,26 @@ alter table status_habilidade_aluno          enable row level security;
 alter table historico_nivel_evolucao         enable row level security;
 alter table auditoria_avaliacoes_evolucao    enable row level security;
 
+grant select on public.avaliacoes_evolucao to anon;
+grant select, insert, update, delete on public.avaliacoes_evolucao to authenticated;
+grant select, insert, update, delete on public.avaliacoes_evolucao to service_role;
+
+grant select on public.avaliacao_criterios_evolucao to anon;
+grant select, insert, update, delete on public.avaliacao_criterios_evolucao to authenticated;
+grant select, insert, update, delete on public.avaliacao_criterios_evolucao to service_role;
+
+grant select on public.status_habilidade_aluno to anon;
+grant select, insert, update, delete on public.status_habilidade_aluno to authenticated;
+grant select, insert, update, delete on public.status_habilidade_aluno to service_role;
+
+grant select on public.historico_nivel_evolucao to anon;
+grant select, insert, update, delete on public.historico_nivel_evolucao to authenticated;
+grant select, insert, update, delete on public.historico_nivel_evolucao to service_role;
+
+grant select on public.auditoria_avaliacoes_evolucao to anon;
+grant select, insert, update, delete on public.auditoria_avaliacoes_evolucao to authenticated;
+grant select, insert, update, delete on public.auditoria_avaliacoes_evolucao to service_role;
+
 create policy avaliacao_evolucao_leitura on avaliacoes_evolucao
   for select using (
     eh_equipe()

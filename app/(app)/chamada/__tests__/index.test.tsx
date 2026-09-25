@@ -104,6 +104,14 @@ describe('ChamadaIndex', () => {
     expect(screen.getByText('Dom')).toBeTruthy();
   });
 
+  it('shows add actions with a plus prefix and keeps the week/month toggle visually distinct', async () => {
+    await render(<ChamadaIndex />);
+
+    expect(screen.getByText('+ Agendar aula')).toBeTruthy();
+    expect(screen.getByText('Semana')).toBeTruthy();
+    expect(screen.getByText('Mês')).toBeTruthy();
+  });
+
   it('navigates to attendance detail with selected date in query string', async () => {
     mockGetAulasRecorrentesPorData.mockResolvedValueOnce([
       { id: 'turma-1', dia_semana: 5, hora: '18:00:00', modulos: [1, 2] },

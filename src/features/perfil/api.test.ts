@@ -36,6 +36,7 @@ describe('perfil api', () => {
           nome: 'Ana Silva',
           papel: 'dono',
           telefone: '(11) 99999-9999',
+          avatar_path: null,
           criado_em: '2026-09-01T10:00:00Z',
         },
         error: null,
@@ -45,7 +46,7 @@ describe('perfil api', () => {
     const perfil = await getMeuPerfil('user-1');
 
     expect(mockFrom).toHaveBeenCalledWith('perfis');
-    expect(mockSelect).toHaveBeenCalledWith('id, nome, papel, telefone, criado_em');
+    expect(mockSelect).toHaveBeenCalledWith('id, nome, papel, telefone, avatar_path, criado_em');
     expect(mockEq).toHaveBeenCalledWith('id', 'user-1');
     expect(perfil.nome).toBe('Ana Silva');
   });

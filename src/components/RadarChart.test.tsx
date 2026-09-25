@@ -18,9 +18,12 @@ function contarPorTipo(no: ReactTestRendererJSON | ReactTestRendererJSON[] | nul
 }
 
 describe('RadarChart', () => {
-  it('não renderiza nada com menos de 3 eixos', async () => {
+  it('completa com eixos zerados até fechar o polígono com menos de 3 eixos', async () => {
     const { toJSON } = await render(<RadarChart eixos={EIXOS.slice(0, 2)} />);
-    expect(toJSON()).toBeNull();
+    const arvore = toJSON();
+
+    expect(arvore).not.toBeNull();
+    expect(contarPorTipo(arvore, 'RNSVGCircle')).toBe(3);
   });
 
   it('desenha um ponto por eixo e os anéis de grade + o polígono de dados', async () => {

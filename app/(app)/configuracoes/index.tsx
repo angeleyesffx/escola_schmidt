@@ -1,5 +1,5 @@
 import { Redirect, useRouter } from 'expo-router';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { useAuth } from '../../../src/features/auth/AuthProvider';
 import { PageHeader } from '../../../src/components/PageHeader';
@@ -43,12 +43,14 @@ export default function ConfiguracoesIndex() {
     <>
       <PageHeader titulo="Configurações" />
       <View style={styles.container}>
-        {itens.map((item) => (
-          <TouchableOpacity key={item.href} style={styles.card} onPress={() => router.push(item.href)}>
-            <Text style={type.subtitle}>{item.label}</Text>
-            <Text style={[type.body, styles.cardTexto]}>{item.descricao}</Text>
-          </TouchableOpacity>
-        ))}
+        <ScrollView contentContainerStyle={styles.lista} showsVerticalScrollIndicator={false}>
+          {itens.map((item) => (
+            <TouchableOpacity key={item.href} style={styles.card} onPress={() => router.push(item.href)}>
+              <Text style={type.subtitle}>{item.label}</Text>
+              <Text style={[type.body, styles.cardTexto]}>{item.descricao}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
       <Footer />
     </>
@@ -59,8 +61,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  lista: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xl,
+    paddingBottom: spacing.xxl,
     gap: spacing.md,
   },
   card: {

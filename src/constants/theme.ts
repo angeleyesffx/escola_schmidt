@@ -11,6 +11,7 @@ export const colors = {
   surfaceTint: '#E6F7FA',
   /** Fundo suave dos blocos de ícone — um pouco mais saturado que o tint de superfície */
   iconWell: '#D4EFF5',
+  tabPastels: ['#E6F7FA', '#EAF1FF', '#FFF3D6', '#EAF7EE'] as const,
   surface: '#FFFFFF',
   text: '#333333',
 

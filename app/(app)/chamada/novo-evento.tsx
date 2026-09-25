@@ -26,6 +26,7 @@ import { confirmar } from '../../../src/lib/confirmar';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { DateRangePicker } from '../../../src/components/DateRangePicker';
 import { Footer } from '../../../src/components/Footer';
+import { WebModal } from '../../../src/components/WebModal';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
 
 function formatBR(dataISO: string): string {
@@ -140,17 +141,17 @@ export default function NovoEvento() {
 
   if (loading) {
     return (
-      <>
+      <WebModal>
         <PageHeader titulo={tituloPagina} />
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
         </View>
-      </>
+      </WebModal>
     );
   }
 
   return (
-    <>
+    <WebModal>
     <PageHeader titulo={tituloPagina} />
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
@@ -231,7 +232,7 @@ export default function NovoEvento() {
       </ScrollView>
     </KeyboardAvoidingView>
     <Footer />
-    </>
+    </WebModal>
   );
 }
 

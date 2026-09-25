@@ -6,6 +6,7 @@ import { useAuth } from '../../../../src/features/auth/AuthProvider';
 import { EvolucaoScreen } from '../../../../src/features/evolucao/EvolucaoScreen';
 import { PageHeader } from '../../../../src/components/PageHeader';
 import { Footer } from '../../../../src/components/Footer';
+import { WebModal } from '../../../../src/components/WebModal';
 
 export default function EvolucaoAlunoPorIdScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -14,16 +15,18 @@ export default function EvolucaoAlunoPorIdScreen() {
 
   if (!meuPapel || (souAlunoOuResponsavel && !meusAlunosCarregado)) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
+      <WebModal>
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </WebModal>
     );
   }
 
   if (souAlunoOuResponsavel) {
     if (meusAlunos.length === 0) {
       return (
-        <>
+        <WebModal>
           <PageHeader titulo="Evolução do aluno" />
           <View style={styles.center}>
             <Text style={[type.body, styles.aviso]}>
@@ -31,7 +34,7 @@ export default function EvolucaoAlunoPorIdScreen() {
             </Text>
           </View>
           <Footer />
-        </>
+        </WebModal>
       );
     }
     // Vários filhos vinculados: acesso é por vínculo com ESTE id da URL, não
@@ -43,13 +46,15 @@ export default function EvolucaoAlunoPorIdScreen() {
   }
 
   return (
-    <EvolucaoScreen
-      alunoId={id}
-      tituloPagina="Evolução do aluno"
-      nomeFallback="Aluno"
-      podeEditar={meuPapel === 'dono' || meuPapel === 'professor'}
-      professorId={session?.user.id ?? null}
-    />
+    <WebModal>
+      <EvolucaoScreen
+        alunoId={id}
+        tituloPagina="Evolução do aluno"
+        nomeFallback="Aluno"
+        podeEditar={meuPapel === 'dono' || meuPapel === 'professor'}
+        professorId={session?.user.id ?? null}
+      />
+    </WebModal>
   );
 }
 

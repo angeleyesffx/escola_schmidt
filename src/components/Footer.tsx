@@ -1,4 +1,5 @@
 import { Image, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { uiAssets } from '../constants/uiAssets';
 import { colors, spacing, type } from '../constants/theme';
@@ -12,8 +13,13 @@ const ALTURA_BANNER = 110;
 const ANO_ATUAL = new Date().getFullYear();
 
 export function Footer() {
+  // Em landscape (iPhone com notch/Android com gestos), a área segura desloca
+  // pra esquerda/direita, não só embaixo — sem isso o texto de copyright
+  // ficava colado (ou cortado) na borda arredondada/entalhe da tela deitada.
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingBottom: insets.bottom, paddingHorizontal: Math.max(insets.left, insets.right) }]}>
       <Image source={uiAssets.banner.rodape} style={styles.imagem} resizeMode="cover" />
       <Text style={styles.copyright}>© {ANO_ATUAL} V&P SOLUTIONS LTDA. Todos os direitos reservados.</Text>
     </View>

@@ -16,6 +16,7 @@ export type Aluno = {
   id: string;
   nome: string;
   modulo: number;
+  aula_recorrente_id?: string | null;
 };
 
 export type StatusPresenca = 'presente' | 'falta' | 'falta_justificada';
@@ -258,7 +259,17 @@ export async function getOuCriaAula(
   return criada.id as string;
 }
 
-export async function getAlunosPorModulos(modulos: number[]) {
+export async function getAlunosPorModulos(modulos: number[], aulaRecorrenteId?: string) {
+  const consulta = await supabase
+    .from('alunos')
+    .select('id, nome, modulo, aula_recorrente_id')
+    .in('modulo', modulos)
+    .or(`aula_recorrente_id.is.null${aulaRecorrenteId ? `,aula_recorrente_id.eq.${aulaRecorrenteId}` : ''}`)
+    .eq('ativo', true)
+    .order('nome');
+  if (!consulta.error) return consulta.data as Aluno[];
+  if (consulta.error.code !== '42703') throw consulta.error;
+
   const { data, error } = await supabase
     .from('alunos')
     .select('id, nome, modulo')
@@ -520,6 +531,29 @@ export async function getAulasTestePorPeriodo(inicioISO: string, fimISO: string)
   })) as AulaTeste[];
 }
 
+export async function getAulaTeste(id: string) {
+  const { data, error } = await supabase
+    .from('aulas_teste')
+    .select(
+      'id, aula_recorrente_id, data, observacoes, aulas_recorrentes(dia_semana, hora, modulos), aulas_teste_candidatos(id, nome, telefone)'
+    )
+    .eq('id', id)
+    .single();
+  if (error) throw error;
+
+  const linha = data as unknown as AulaTesteLinha;
+  return {
+    id: linha.id,
+    aula_recorrente_id: linha.aula_recorrente_id,
+    data: linha.data,
+    observacoes: linha.observacoes,
+    dia_semana: linha.aulas_recorrentes?.dia_semana ?? 0,
+    hora: linha.aulas_recorrentes?.hora ?? '',
+    modulos: linha.aulas_recorrentes?.modulos ?? [],
+    candidatos: linha.aulas_teste_candidatos ?? [],
+  } as AulaTeste;
+}
+
 // Alimenta a seção "Aula Experimental" da chamada (chamada/[id].tsx) — só o
 // nome/telefone dos candidatos daquele slot+data, sem presença formal
 // (decisão 3 de docs/product/chamada-agenda-frequencia.md §7.2).
@@ -542,23 +576,36 @@ export async function criarAulaTeste(
   candidatos: { nome: string; telefone: string | null }[],
   observacoes: string | null
 ) {
-  const { data: criada, error } = await supabase
-    .from('aulas_teste')
-    .insert({ aula_recorrente_id: aulaRecorrenteId, data, observacoes })
-    .select('id')
-    .single();
+  const { data: id, error } = await supabase.rpc('salvar_aula_teste', {
+    p_aula_recorrente_id: aulaRecorrenteId,
+    p_data: data,
+    p_observacoes: observacoes,
+    p_candidatos: candidatos,
+    p_id: null,
+  });
   if (error) throw error;
-
-  const { error: erroCandidatos } = await supabase
-    .from('aulas_teste_candidatos')
-    .insert(candidatos.map((c) => ({ aula_teste_id: criada.id, nome: c.nome, telefone: c.telefone })));
-  if (erroCandidatos) throw erroCandidatos;
-
-  return criada.id as string;
+  return id as string;
 }
 
 export async function excluirAulaTeste(id: string) {
   const { error } = await supabase.from('aulas_teste').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function atualizarAulaTeste(
+  id: string,
+  aulaRecorrenteId: string,
+  data: string,
+  candidatos: { nome: string; telefone: string | null }[],
+  observacoes: string | null
+) {
+  const { error } = await supabase.rpc('salvar_aula_teste', {
+    p_aula_recorrente_id: aulaRecorrenteId,
+    p_data: data,
+    p_observacoes: observacoes,
+    p_candidatos: candidatos,
+    p_id: id,
+  });
   if (error) throw error;
 }
 

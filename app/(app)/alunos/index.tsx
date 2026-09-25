@@ -1,6 +1,16 @@
 import { useMemo, useState } from 'react';
 import { Redirect, useRouter } from 'expo-router';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 
 import { getAlunos, type Aluno } from '../../../src/features/alunos/api';
 import { getGradeSemanal, getModulosAtivos, type Modulo } from '../../../src/features/chamada/api';
@@ -17,6 +27,8 @@ type FiltroStatus = 'todos' | 'ativos' | 'inativos';
 export default function AlunosIndex() {
   const router = useRouter();
   const { meuPapel } = useAuth();
+  const { width } = useWindowDimensions();
+  const usarListaCompacta = width < 900;
   const [busca, setBusca] = useState('');
   const [moduloFiltro, setModuloFiltro] = useState<number | null>(null);
   const [statusFiltro, setStatusFiltro] = useState<FiltroStatus>('todos');
@@ -66,6 +78,7 @@ export default function AlunosIndex() {
   const filtrosAtivos = busca.trim() !== '' || moduloFiltro !== null || statusFiltro !== 'todos';
   const modulosVisiveis =
     moduloFiltro !== null ? modulos.filter((m) => m.numero === moduloFiltro) : modulos;
+  const nomeModulo = new Map(modulos.map((modulo) => [modulo.numero, modulo.nome]));
 
   function limparFiltros() {
     setBusca('');
@@ -148,50 +161,74 @@ export default function AlunosIndex() {
 
         {error ? <Text style={[type.body, styles.error]}>{error}</Text> : null}
 
-        <ScrollView
-          horizontal
-          style={styles.lanesScroll}
-          contentContainerStyle={styles.lanesRow}
-          showsHorizontalScrollIndicator={false}
-        >
-          {modulosVisiveis.map((m) => {
-            const alunosDoModulo = alunosPorModulo.get(m.numero) ?? [];
-            const horarios = horariosDoModulo(m.numero);
-            return (
-              <View key={m.numero} style={[styles.lane, moduloFiltro !== null && styles.laneUnica]}>
-                <View style={styles.laneHeader}>
-                  <Text style={type.subtitle}>{m.nome}</Text>
-                  <Text style={[type.caption, styles.laneHorarios]} numberOfLines={2}>
-                    {horarios || 'Sem horário na grade'}
+        {usarListaCompacta ? (
+          <FlatList
+            style={styles.listaCompacta}
+            data={alunosFiltrados}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listaCompactaConteudo}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <Text style={[type.body, styles.subtitle, styles.laneVazia]}>
+                {filtrosAtivos ? 'Nenhum aluno com esses filtros.' : 'Nenhum aluno cadastrado.'}
+              </Text>
+            }
+            renderItem={({ item }) => (
+              <TouchableOpacity style={styles.cardCompacto} onPress={() => router.push(`/alunos/${item.id}`)}>
+                <View style={styles.cardCompactoTopo}>
+                  <Text style={type.subtitle} numberOfLines={1}>
+                    {item.nome}
+                  </Text>
+                  <Text style={[type.caption, styles.cardCompactoModulo]}>
+                    {nomeModulo.get(item.modulo) ?? `Módulo ${item.modulo}`}
                   </Text>
                 </View>
-                <ScrollView contentContainerStyle={styles.laneLista}>
-                  {alunosDoModulo.length === 0 ? (
-                    <Text style={[type.body, styles.subtitle, styles.laneVazia]}>
-                      {filtrosAtivos ? 'Nenhum aluno com esses filtros.' : 'Nenhum aluno neste módulo.'}
+                <Text style={[type.body, styles.cardSubtitle]}>
+                  {!item.ativo ? 'Inativo' : 'Ativo'}
+                  {item.perfil_id ? ' · Conta vinculada' : ''}
+                </Text>
+              </TouchableOpacity>
+            )}
+          />
+        ) : (
+          <ScrollView
+            horizontal
+            style={styles.lanesScroll}
+            contentContainerStyle={styles.lanesRow}
+            showsHorizontalScrollIndicator={false}
+          >
+            {modulosVisiveis.map((m) => {
+              const alunosDoModulo = alunosPorModulo.get(m.numero) ?? [];
+              const horarios = horariosDoModulo(m.numero);
+              return (
+                <View key={m.numero} style={[styles.lane, moduloFiltro !== null && styles.laneUnica]}>
+                  <View style={styles.laneHeader}>
+                    <Text style={type.subtitle}>{m.nome}</Text>
+                    <Text style={[type.caption, styles.laneHorarios]} numberOfLines={2}>
+                      {horarios || 'Sem horário na grade'}
                     </Text>
-                  ) : (
-                    alunosDoModulo.map((item) => (
-                      <TouchableOpacity
-                        key={item.id}
-                        style={styles.card}
-                        onPress={() => router.push(`/alunos/${item.id}`)}
-                      >
-                        <Text style={type.subtitle} numberOfLines={1}>
-                          {item.nome}
-                        </Text>
-                        <Text style={[type.body, styles.cardSubtitle]}>
-                          {!item.ativo ? 'Inativo' : 'Ativo'}
-                          {item.perfil_id ? ' · Conta vinculada' : ''}
-                        </Text>
-                      </TouchableOpacity>
-                    ))
-                  )}
-                </ScrollView>
-              </View>
-            );
-          })}
-        </ScrollView>
+                  </View>
+                  <ScrollView contentContainerStyle={styles.laneLista}>
+                    {alunosDoModulo.length === 0 ? (
+                      <Text style={[type.body, styles.subtitle, styles.laneVazia]}>
+                        {filtrosAtivos ? 'Nenhum aluno com esses filtros.' : 'Nenhum aluno neste módulo.'}
+                      </Text>
+                    ) : (
+                      alunosDoModulo.map((item) => (
+                        <TouchableOpacity key={item.id} style={styles.card} onPress={() => router.push(`/alunos/${item.id}`)}>
+                          <Text style={type.subtitle} numberOfLines={1}>{item.nome}</Text>
+                          <Text style={[type.body, styles.cardSubtitle]}>
+                            {!item.ativo ? 'Inativo' : 'Ativo'}{item.perfil_id ? ' · Conta vinculada' : ''}
+                          </Text>
+                        </TouchableOpacity>
+                      ))
+                    )}
+                  </ScrollView>
+                </View>
+              );
+            })}
+          </ScrollView>
+        )}
       </View>
       <Footer />
     </>
@@ -222,6 +259,32 @@ const styles = StyleSheet.create({
   error: {
     color: colors.danger,
     marginTop: spacing.sm,
+  },
+  listaCompacta: {
+    flex: 1,
+    marginTop: spacing.lg,
+  },
+  listaCompactaConteudo: {
+    gap: spacing.sm,
+    paddingBottom: spacing.xl,
+  },
+  cardCompacto: {
+    minHeight: touchTarget + spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  cardCompactoTopo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  cardCompactoModulo: {
+    color: colors.primary,
   },
   novoBotao: {
     height: touchTarget,

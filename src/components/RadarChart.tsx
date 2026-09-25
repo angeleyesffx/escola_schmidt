@@ -33,18 +33,28 @@ function pontoNoEixo(indice: number, total: number, raioRelativo: number, centro
  * docs/product/evolucao-vs-desempenho.md). Desenhado com react-native-svg
  * em vez de biblioteca de gráfico pronta — o app não tem nenhuma outra
  * dependência de chart, e um radar de poucos eixos é pouca matemática pra
- * justificar puxar uma lib inteira. */
+ * justificar puxar uma lib inteira. Com menos de 3 macroáreas cadastradas,
+ * completa com eixos zerados (sem rótulo) só pra fechar o polígono — o
+ * aluno/professor vê o que ainda está por vir em vez de nada. */
 export function RadarChart({ eixos, tamanho = 220 }: Props) {
-  if (eixos.length < 3) {
-    return null;
-  }
+  const eixosExibidos =
+    eixos.length >= 3
+      ? eixos
+      : [
+          ...eixos,
+          ...Array.from({ length: 3 - eixos.length }, (_, indice) => ({
+            id: `placeholder-${indice}`,
+            label: '',
+            percentual: 0,
+          })),
+        ];
 
   const rotuloEspaco = 34;
   const centro = tamanho / 2;
   const raioMaximo = tamanho / 2 - rotuloEspaco;
-  const total = eixos.length;
+  const total = eixosExibidos.length;
 
-  const pontosDado = eixos
+  const pontosDado = eixosExibidos
     .map((eixo, indice) => pontoNoEixo(indice, total, Math.max(eixo.percentual, 0) / 100, centro, raioMaximo))
     .map((p) => `${p.x},${p.y}`)
     .join(' ');
@@ -52,7 +62,7 @@ export function RadarChart({ eixos, tamanho = 220 }: Props) {
   return (
     <Svg width={tamanho} height={tamanho} testID="radar-chart">
       {ANEIS.map((anel) => {
-        const pontos = eixos
+        const pontos = eixosExibidos
           .map((_, indice) => pontoNoEixo(indice, total, anel, centro, raioMaximo))
           .map((p) => `${p.x},${p.y}`)
           .join(' ');
@@ -61,7 +71,7 @@ export function RadarChart({ eixos, tamanho = 220 }: Props) {
         );
       })}
 
-      {eixos.map((eixo, indice) => {
+      {eixosExibidos.map((eixo, indice) => {
         const ponta = pontoNoEixo(indice, total, 1, centro, raioMaximo);
         return (
           <Line
@@ -78,12 +88,13 @@ export function RadarChart({ eixos, tamanho = 220 }: Props) {
 
       <Polygon points={pontosDado} fill={colors.primarySoft} fillOpacity={0.45} stroke={colors.primary} strokeWidth={2} />
 
-      {eixos.map((eixo, indice) => {
+      {eixosExibidos.map((eixo, indice) => {
         const ponto = pontoNoEixo(indice, total, Math.max(eixo.percentual, 0) / 100, centro, raioMaximo);
         return <Circle key={eixo.id} cx={ponto.x} cy={ponto.y} r={3} fill={colors.primary} />;
       })}
 
-      {eixos.map((eixo, indice) => {
+      {eixosExibidos.map((eixo, indice) => {
+        if (!eixo.label) return null;
         const rotulo = pontoNoEixo(indice, total, 1.18, centro, raioMaximo);
         return (
           <SvgText

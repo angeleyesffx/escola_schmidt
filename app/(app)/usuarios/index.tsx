@@ -1,11 +1,12 @@
-import { Redirect, useRouter } from 'expo-router';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Redirect, useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { getUsuarios } from '../../../src/features/usuarios/api';
+import { getUsuariosPagina, type Usuario } from '../../../src/features/usuarios/api';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
-import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
+import { WebModal } from '../../../src/components/WebModal';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
 
 const ROTULO_PAPEL: Record<string, string> = {
@@ -18,12 +19,38 @@ const ROTULO_PAPEL: Record<string, string> = {
 export default function UsuariosIndex() {
   const router = useRouter();
   const { meuPapel } = useAuth();
+  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  const [total, setTotal] = useState(0);
+  const [pagina, setPagina] = useState(0);
+  const [temMais, setTemMais] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [carregandoMais, setCarregandoMais] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const { data, loading, error } = useAsyncData(getUsuarios, [], {
-    onFocus: true,
-    mensagemErro: 'Erro ao carregar usuários. Tente novamente.',
-  });
-  const usuarios = data ?? [];
+  const carregar = useCallback(async (proximaPagina: number, substituir: boolean) => {
+    if (proximaPagina === 0) setLoading(true);
+    else setCarregandoMais(true);
+    setError(null);
+    try {
+      const resultado = await getUsuariosPagina(proximaPagina);
+      setUsuarios((atuais) => substituir ? resultado.usuarios : [...atuais, ...resultado.usuarios]);
+      setTotal(resultado.total);
+      setTemMais(resultado.temMais);
+      setPagina(proximaPagina);
+    } catch (err) {
+      console.error(err);
+      setError('Erro ao carregar usuários. Tente novamente.');
+    } finally {
+      setLoading(false);
+      setCarregandoMais(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void carregar(0, true);
+    }, [carregar])
+  );
 
   // Igual às outras telas de gestão (alunos/index.tsx): a barreira de
   // verdade é a RLS (perfil_dono_gerencia, supabase/migrations/0017) — isto
@@ -44,47 +71,64 @@ export default function UsuariosIndex() {
   }
 
   return (
-    <>
+    <WebModal>
       <PageHeader titulo="Usuários" />
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={[type.body, styles.subtitle]}>{usuarios.length} cadastrados</Text>
-          <TouchableOpacity
-            testID="usuarios-botao-convidar"
-            style={styles.novoBotao}
-            onPress={() => router.push('/usuarios/novo')}
-          >
-            <Text style={styles.novoBotaoTexto}>+ Convidar</Text>
-          </TouchableOpacity>
-        </View>
-
-        {error ? <Text style={[type.body, styles.error]}>{error}</Text> : null}
-
-        {usuarios.length === 0 ? (
-          <Text style={[type.body, styles.subtitle, styles.vazio]}>Nenhum usuário cadastrado ainda.</Text>
-        ) : (
-          <View style={styles.list}>
-            {usuarios.map((usuario) => (
+        <FlatList
+          style={styles.scroll}
+          data={usuarios}
+          keyExtractor={(usuario) => usuario.id}
+          ItemSeparatorComponent={() => <View style={styles.itemSeparator} />}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <>
+              <View style={styles.header}>
+                <Text style={[type.body, styles.subtitle]}>{total} cadastrados</Text>
+                <TouchableOpacity
+                  testID="usuarios-botao-convidar"
+                  style={styles.novoBotao}
+                  onPress={() => router.push('/usuarios/novo')}
+                >
+                  <Text style={styles.novoBotaoTexto}>+ Convidar</Text>
+                </TouchableOpacity>
+              </View>
+              {error ? <Text style={[type.body, styles.error]}>{error}</Text> : null}
+            </>
+          }
+          ListEmptyComponent={
+            !error ? <Text style={[type.body, styles.subtitle, styles.vazio]}>Nenhum usuário cadastrado ainda.</Text> : null
+          }
+          renderItem={({ item: usuario }) => (
+            <TouchableOpacity
+              testID={`usuarios-linha-${usuario.id}`}
+              style={styles.card}
+              onPress={() => router.push(`/usuarios/${usuario.id}`)}
+            >
+              <Text style={type.subtitle} numberOfLines={1}>
+                {usuario.nome}
+              </Text>
+              <Text style={[type.body, styles.cardSubtitle]}>
+                {ROTULO_PAPEL[usuario.papel] ?? usuario.papel}
+                {!usuario.ativo ? ' · Inativo' : ''}
+              </Text>
+            </TouchableOpacity>
+          )}
+          ListFooterComponent={
+            temMais ? (
               <TouchableOpacity
-                key={usuario.id}
-                testID={`usuarios-linha-${usuario.id}`}
-                style={styles.card}
-                onPress={() => router.push(`/usuarios/${usuario.id}`)}
+                style={[styles.carregarMaisBotao, carregandoMais && styles.botaoDesabilitado]}
+                onPress={() => void carregar(pagina + 1, false)}
+                disabled={carregandoMais}
               >
-                <Text style={type.subtitle} numberOfLines={1}>
-                  {usuario.nome}
-                </Text>
-                <Text style={[type.body, styles.cardSubtitle]}>
-                  {ROTULO_PAPEL[usuario.papel] ?? usuario.papel}
-                  {!usuario.ativo ? ' · Inativo' : ''}
-                </Text>
+                <Text style={styles.carregarMaisTexto}>{carregandoMais ? 'Carregando...' : 'Carregar mais'}</Text>
               </TouchableOpacity>
-            ))}
-          </View>
-        )}
+            ) : null
+          }
+        />
       </View>
       <Footer />
-    </>
+    </WebModal>
   );
 }
 
@@ -92,8 +136,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xl,
+    paddingBottom: spacing.xxl,
   },
   center: {
     flex: 1,
@@ -105,6 +155,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: spacing.md,
   },
   subtitle: {
     color: colors.textMuted,
@@ -129,9 +180,25 @@ const styles = StyleSheet.create({
     fontFamily: type.subtitle.fontFamily,
     fontSize: type.subtitle.fontSize,
   },
-  list: {
-    marginTop: spacing.lg,
-    gap: spacing.sm,
+  carregarMaisBotao: {
+    minHeight: touchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  carregarMaisTexto: {
+    color: colors.primary,
+    fontFamily: type.subtitle.fontFamily,
+    fontSize: type.subtitle.fontSize,
+  },
+  botaoDesabilitado: {
+    opacity: 0.6,
+  },
+  itemSeparator: {
+    height: spacing.sm,
   },
   card: {
     minHeight: touchTarget,

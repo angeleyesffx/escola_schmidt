@@ -98,17 +98,14 @@ export function formatMesAno(data: Date) {
 // "Semana" sozinho não diz nada — mostra o intervalo de fato, igual o modo
 // mês já mostra "janeiro 2026" em vez de só "Mês".
 export function formatIntervaloSemana(dias: DiaCalendario[]) {
-  const inicio = dias[0].data;
-  const fim = dias[6].data;
+  return dias[0].data.toLocaleDateString('pt-BR', {
+    month: 'long',
+    year: 'numeric',
+  });
+}
 
-  if (inicio.getMonth() === fim.getMonth()) {
-    const mes = fim.toLocaleDateString('pt-BR', { month: 'long' });
-    return `${inicio.getDate()} a ${fim.getDate()} de ${mes}`;
-  }
-
-  const mesInicio = inicio.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
-  const mesFim = fim.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
-  return `${inicio.getDate()} ${mesInicio} – ${fim.getDate()} ${mesFim}`;
+export function dataISOAntesDeHoje(dataISO: string) {
+  return dataISO < formatDataISO(new Date());
 }
 
 export function formatHora(hora: string) {

@@ -9,6 +9,10 @@ type Props = {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  // Conteúdo fixo entre o título e a área rolável — usado quando algo (ex.:
+  // qual habilidade está sendo avaliada) precisa continuar visível mesmo
+  // com o corpo do modal rolado pra baixo.
+  stickyHeader?: ReactNode;
 };
 
 // Wrapper genérico pra formulário em modal — usado tanto pra "adicionar" (o
@@ -17,7 +21,7 @@ type Props = {
 // com um layout diferente. Mesmo padrão visual de ModalExportacao
 // (src/features/chamada/components/ModalExportacao.tsx): overlay
 // semitransparente, toque fora fecha, card centralizado.
-export function FormModal({ visible, title, onClose, children }: Props) {
+export function FormModal({ visible, title, onClose, children, stickyHeader }: Props) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
@@ -29,6 +33,7 @@ export function FormModal({ visible, title, onClose, children }: Props) {
               <Ionicons name="close" size={24} color={colors.textMuted} />
             </TouchableOpacity>
           </View>
+          {stickyHeader ? <View style={styles.stickyHeader}>{stickyHeader}</View> : null}
           <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
             {children}
           </ScrollView>
@@ -48,8 +53,8 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '100%',
-    maxWidth: 420,
-    maxHeight: '85%',
+    maxWidth: 720,
+    height: '88%',
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     padding: spacing.lg,
@@ -59,6 +64,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: spacing.md,
+  },
+  stickyHeader: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingBottom: spacing.sm,
+    marginBottom: spacing.sm,
   },
   body: {
     gap: spacing.sm,

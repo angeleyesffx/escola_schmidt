@@ -4,6 +4,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
+import { WebModal } from '../../../src/components/WebModal';
 import { colors, radius, spacing, type } from '../../../src/constants/theme';
 
 export default function AgendarAula() {
@@ -15,7 +16,7 @@ export default function AgendarAula() {
   }
 
   return (
-    <>
+    <WebModal>
       <PageHeader titulo="Agendar aula" />
       <View style={styles.container}>
         <TouchableOpacity
@@ -41,7 +42,7 @@ export default function AgendarAula() {
         </TouchableOpacity>
       </View>
       <Footer />
-    </>
+    </WebModal>
   );
 }
 

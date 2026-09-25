@@ -15,7 +15,7 @@ export function AcoesAgendamento({ podeEditar, souAluno, onAgendarAula, onAgenda
       {podeEditar ? (
         <View style={styles.tituloRow}>
           <TouchableOpacity testID="chamada-index-particular-novo" style={styles.particularBotao} onPress={onAgendarAula}>
-            <Text style={styles.particularBotaoTexto}>Agendar aula</Text>
+            <Text style={styles.particularBotaoTexto}><Text style={styles.plusPrefix}>+</Text> Agendar aula</Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -27,7 +27,7 @@ export function AcoesAgendamento({ podeEditar, souAluno, onAgendarAula, onAgenda
             style={styles.particularBotao}
             onPress={onAgendarParticular}
           >
-            <Text style={styles.particularBotaoTexto}>Agendar aula particular</Text>
+            <Text style={styles.particularBotaoTexto}><Text style={styles.plusPrefix}>+</Text> Agendar aula particular</Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -40,7 +40,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    marginTop: spacing.md,
   },
   particularBotao: {
     height: touchTarget,
@@ -54,5 +53,11 @@ const styles = StyleSheet.create({
     color: colors.onPrimary,
     fontFamily: type.subtitle.fontFamily,
     fontSize: type.subtitle.fontSize,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  plusPrefix: {
+    marginRight: spacing.xs,
+    fontWeight: '700',
   },
 });

@@ -276,7 +276,7 @@ describe('EvolucaoScreen', () => {
       />
     );
 
-    await screen.findByText('Avaliação rápida');
+    await screen.findByText('Avaliação');
     // requisitos[0] é hab-1 — cada requisito renderiza seu próprio grid com o
     // rótulo "Consolidado", então o primeiro elemento é o de hab-1.
     await fireEvent.press(screen.getAllByText('Consolidado')[0]);

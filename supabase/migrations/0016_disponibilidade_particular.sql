@@ -43,6 +43,10 @@ create trigger trg_valida_disponibilidade_particular
 
 alter table disponibilidade_particular enable row level security;
 
+grant select on public.disponibilidade_particular to anon;
+grant select, insert, update, delete on public.disponibilidade_particular to authenticated;
+grant select, insert, update, delete on public.disponibilidade_particular to service_role;
+
 -- Leitura aberta pra qualquer autenticado — é o que alimenta "quais horas
 -- esse professor está livre" na hora de marcar a particular.
 create policy disponibilidade_leitura on disponibilidade_particular

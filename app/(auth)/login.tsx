@@ -17,6 +17,7 @@ import {
 import { useAuth } from '../../src/features/auth/AuthProvider';
 import { lerUltimoEmailLembrado } from '../../src/lib/rememberMeStorage';
 import { PageHeader } from '../../src/components/PageHeader';
+import { Footer } from '../../src/components/Footer';
 import { PasswordInput } from '../../src/components/PasswordInput';
 import { colors, radius, spacing, touchTarget, type } from '../../src/constants/theme';
 
@@ -29,7 +30,7 @@ export default function Login() {
   const emPaisagemCelular = width > height && width < 980;
   const emTelaBaixa = height < 760;
   const modoCompacto = emTelaPequena || emPaisagemCelular || emTelaBaixa;
-  const tamanhoLogo = modoCompacto ? 136 : 200;
+  const tamanhoLogo = modoCompacto ? 220 : 320;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [lembrar, setLembrar] = useState(true);
@@ -92,14 +93,12 @@ export default function Login() {
         contentContainerStyle={[styles.container, modoCompacto && styles.containerCompacto]}
         keyboardShouldPersistTaps="handled"
       >
-        <Image source={require('../../assets/logo.png')} style={[styles.logo, { width: tamanhoLogo, height: tamanhoLogo }]} />
-        <Text style={[type.body, styles.subtitle, { width: larguraFormulario }]}>Entre com sua conta.</Text>
-
+        <Image source={require('../../assets/logo.png')} style={[styles.logo, { height: tamanhoLogo }]} />
         <View style={[styles.form, { width: larguraFormulario }] }>
           <TextInput
             testID="login-input-email"
             style={styles.input}
-            placeholder="Email"
+            placeholder="Entre com sua conta"
             placeholderTextColor={colors.textMuted}
             autoCapitalize="none"
             autoComplete="email"
@@ -176,6 +175,7 @@ export default function Login() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      <Footer />
     </KeyboardAvoidingView>
   );
 }
@@ -196,15 +196,12 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     paddingTop: spacing.md,
   },
-  subtitle: {
-    color: colors.textMuted,
-    marginTop: spacing.md,
-    marginBottom: spacing.xl,
-    textAlign: 'left',
-  },
   logo: {
     resizeMode: 'contain',
+    alignSelf: 'center',
+    aspectRatio: 84 / 136,
     marginTop: spacing.sm,
+    marginBottom: spacing.xl,
   },
   form: {
     gap: spacing.md,

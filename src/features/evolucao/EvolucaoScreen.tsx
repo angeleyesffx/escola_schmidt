@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   ActivityIndicator,
@@ -13,15 +13,18 @@ import {
 } from 'react-native';
 
 import { Dropdown } from '../../components/Dropdown';
+import { FormModal } from '../../components/FormModal';
 import { RadarChart } from '../../components/RadarChart';
 import { PageHeader } from '../../components/PageHeader';
 import { Footer } from '../../components/Footer';
 import { colors, radius, spacing, type } from '../../constants/theme';
 import { uiAssets } from '../../constants/uiAssets';
+import { confirmar } from '../../lib/confirmar';
 import { getAluno, getContratoAtual, getFrequenciaAluno, type Aluno } from '../alunos/api';
 import { getGradeSemanal } from '../chamada/api';
 import {
   atribuirMetodologiaAluno,
+  AvaliacaoDuplicadaError,
   getCriteriosHabilidades,
   getHistoricoNivelAluno,
   getMetodologiaAtualAluno,
@@ -116,10 +119,42 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
   const [requisitos, setRequisitos] = useState<RequisitoNivelEvolucao[]>([]);
   const [statusHabilidades, setStatusHabilidades] = useState<StatusAtualHabilidade[]>([]);
   const [criteriosPorHabilidade, setCriteriosPorHabilidade] = useState<Record<string, CriterioHabilidadeEvolucao[]>>({});
-  const [salvandoHabilidadeId, setSalvandoHabilidadeId] = useState<string | null>(null);
+  // Status escolhido pelo professor mas ainda não salvo — tocar num chip só
+  // marca a intenção; o salvamento de tudo acontece de uma vez só, no botão
+  // único do fim do modal (salvarTodasAvaliacoes).
+  const [statusSelecionadoPorHabilidade, setStatusSelecionadoPorHabilidade] = useState<
+    Record<string, StatusHabilidadeEvolucao>
+  >({});
+  const [salvandoTudo, setSalvandoTudo] = useState(false);
+  // Erro do formulário do modal — separado do `erro` da página, senão uma
+  // validação daqui esconderia todo o progresso/radar quando o modal fechar.
+  const [erroAvaliacao, setErroAvaliacao] = useState<string | null>(null);
   const [observacoesRapidas, setObservacoesRapidas] = useState<Record<string, string>>({});
-  const [habilidadeDetalhadaAberta, setHabilidadeDetalhadaAberta] = useState<string | null>(null);
+  // Antes era um botão à parte que forçava o status pra "em_desenvolvimento"
+  // — confuso, porque ignorava o status real escolhido. Agora é só um toggle
+  // que viaja junto com qualquer status que o professor tocar.
+  const [atencaoPorHabilidade, setAtencaoPorHabilidade] = useState<Record<string, boolean>>({});
   const [valoresCriterios, setValoresCriterios] = useState<Record<string, Record<string, string>>>({});
+  // Um único botão abre o modal com todas as habilidades do nível de uma vez
+  // — nada de um modal por habilidade. Submeter dentro dele é o único jeito
+  // de atualizar radar/progresso/jornada agora.
+  const [avaliacaoAberta, setAvaliacaoAberta] = useState(false);
+  // Uma habilidade por tela dentro do modal, em carrossel — o professor
+  // arrasta pro lado pra passar de habilidade; "Salvar avaliação" só existe
+  // na última tela. As bolinhas só refletem/pulam pra posição, quem navega
+  // de fato é o swipe do ScrollView horizontal abaixo.
+  const [passoAtual, setPassoAtual] = useState(0);
+  const [larguraPagina, setLarguraPagina] = useState(0);
+  const carrosselRef = useRef<ScrollView>(null);
+  // Legenda de status escondida atrás de um "?" — fica disponível sem
+  // ocupar espaço fixo na tela o tempo todo.
+  const [legendaAberta, setLegendaAberta] = useState(false);
+  // Textos explicativos das telas de atribuir/promover/avaliar também vivem
+  // atrás de um "?" — o cliente relatou telas poluídas com informação que
+  // só precisa aparecer quando pedida.
+  const [ajudaAtribuirAberta, setAjudaAtribuirAberta] = useState(false);
+  const [ajudaPromocaoAberta, setAjudaPromocaoAberta] = useState(false);
+  const [ajudaAvaliacaoRapidaAberta, setAjudaAvaliacaoRapidaAberta] = useState(false);
 
   // Formulário de "atribuir metodologia" — só relevante pra staff quando o
   // aluno ainda não tem nenhuma (achado 4.2 de evolucao-vs-desempenho.md).
@@ -134,8 +169,17 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
   const [nivelPromocaoSelecionado, setNivelPromocaoSelecionado] = useState<string | null>(null);
   const [promovendo, setPromovendo] = useState(false);
 
+  // `carregar` roda de novo depois de toda avaliação/promoção pra refletir o
+  // dado salvo — mas só a primeira carga deve trocar a tela inteira por um
+  // spinner. Recarregar em loading=true a cada clique desmonta e remonta
+  // todo o conteúdo do ScrollView, o que joga a rolagem de volta pro topo.
+  const primeiraCargaRef = useRef(true);
+
   const carregar = useCallback(async () => {
-    setLoading(true);
+    const ehPrimeiraCarga = primeiraCargaRef.current;
+    if (ehPrimeiraCarga) {
+      setLoading(true);
+    }
     setErro(null);
 
     try {
@@ -208,6 +252,7 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
       );
     } finally {
       setLoading(false);
+      primeiraCargaRef.current = false;
     }
   }, [alunoId, podeEditar]);
 
@@ -217,91 +262,155 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
     }, [carregar])
   );
 
-  async function salvarAvaliacaoRapida(habilidadeId: string, status: StatusHabilidadeEvolucao, precisaAtencao = false) {
-    if (!metodologiaAtual?.metodologiaId) {
-      setErro('O aluno precisa ter uma metodologia ativa antes da avaliação.');
-      return;
-    }
-
+  // Só chama a RPC — não mexe em loading/erro/modal. Quem orquestra isso é
+  // salvarTodasAvaliacoes, que é o único botão de salvar do modal agora.
+  async function registrarRapidaInterna(requisito: RequisitoNivelEvolucao, sobrescrever: boolean) {
+    const status = statusSelecionadoPorHabilidade[requisito.habilidadeId];
+    if (!status) return;
     const preset = STATUS_AVALIACAO_RAPIDA.find((item) => item.valor === status);
-    setSalvandoHabilidadeId(habilidadeId);
-    setErro(null);
+    const precisaAtencao = atencaoPorHabilidade[requisito.habilidadeId] ?? false;
 
-    try {
-      await registrarAvaliacaoRapidaEvolucao({
-        alunoId,
-        habilidadeId,
-        metodologiaId: metodologiaAtual.metodologiaId,
-        professorId,
-        status,
-        percentualGeral: preset?.percentual ?? null,
-        precisaAtencao,
-        prioridadeTreinamento: precisaAtencao ? 1 : null,
-        observacoes: observacoesRapidas[habilidadeId]?.trim() || null,
-      });
-      await carregar();
-    } catch (error) {
-      console.error(error);
-      setErro('Erro ao salvar avaliação rápida. Tente novamente.');
-    } finally {
-      setSalvandoHabilidadeId(null);
-    }
+    await registrarAvaliacaoRapidaEvolucao({
+      alunoId,
+      habilidadeId: requisito.habilidadeId,
+      metodologiaId: metodologiaAtual!.metodologiaId,
+      professorId,
+      status,
+      percentualGeral: preset?.percentual ?? null,
+      precisaAtencao,
+      prioridadeTreinamento: precisaAtencao ? 1 : null,
+      observacoes: observacoesRapidas[requisito.habilidadeId]?.trim() || null,
+      sobrescrever,
+    });
   }
 
-  async function salvarAvaliacaoDetalhada(habilidadeId: string, precisaAtencao = false) {
+  async function registrarDetalhadaInterna(
+    requisito: RequisitoNivelEvolucao,
+    valoresNumericos: Record<string, number>,
+    sobrescrever: boolean
+  ) {
+    const criterios = criteriosPorHabilidade[requisito.habilidadeId] ?? [];
+    const precisaAtencao = atencaoPorHabilidade[requisito.habilidadeId] ?? false;
+
+    await registrarAvaliacaoDetalhadaEvolucao({
+      alunoId,
+      habilidadeId: requisito.habilidadeId,
+      metodologiaId: metodologiaAtual!.metodologiaId,
+      professorId,
+      observacoes: observacoesRapidas[requisito.habilidadeId]?.trim() || null,
+      precisaAtencao,
+      prioridadeTreinamento: precisaAtencao ? 1 : null,
+      criterios: criterios.map((criterio) => ({
+        criterioId: criterio.id,
+        percentual: valoresNumericos[criterio.id],
+        observacoes: null,
+      })),
+      dataAvaliacao: undefined,
+      sobrescrever,
+    });
+  }
+
+  // Único botão de salvar do modal: varre todas as habilidades tocadas pelo
+  // professor (status escolhido e/ou critérios preenchidos) e submete todas
+  // de uma vez. O aviso de sobrescrever só aparece aqui, no fim, e uma única
+  // vez pro conjunto inteiro — não mais uma confirmação por habilidade no
+  // meio da avaliação.
+  async function salvarTodasAvaliacoes(habilidadesParaSobrescrever: Set<string> = new Set()) {
     if (!metodologiaAtual?.metodologiaId) {
-      setErro('O aluno precisa ter uma metodologia ativa antes da avaliação.');
+      setErroAvaliacao('O aluno precisa ter uma metodologia ativa antes da avaliação.');
       return;
     }
 
-    const criterios = criteriosPorHabilidade[habilidadeId] ?? [];
-    const valoresBrutos = valoresCriterios[habilidadeId] ?? {};
-    const valoresNumericos: Record<string, number> = {};
+    setErroAvaliacao(null);
 
-    for (const criterio of criterios) {
-      const bruto = valoresBrutos[criterio.id]?.trim();
-      const numero = Number(bruto);
-      if (!bruto || Number.isNaN(numero) || numero < 0 || numero > 100) {
-        setErro(`Preencha ${criterio.nome} com um valor entre 0 e 100.`);
-        return;
+    type Pendente = { requisito: RequisitoNivelEvolucao; valoresNumericos?: Record<string, number> };
+    const pendentes: Pendente[] = [];
+
+    for (const requisito of requisitos) {
+      const criterios = criteriosPorHabilidade[requisito.habilidadeId] ?? [];
+      const valoresBrutos = valoresCriterios[requisito.habilidadeId] ?? {};
+      const preenchidos = criterios.filter((criterio) => valoresBrutos[criterio.id]?.trim());
+
+      if (criterios.length && preenchidos.length > 0) {
+        if (preenchidos.length !== criterios.length) {
+          setErroAvaliacao(`Preencha todos os critérios de ${requisito.habilidadeNome} ou deixe todos em branco.`);
+          return;
+        }
+
+        const valoresNumericos: Record<string, number> = {};
+        for (const criterio of criterios) {
+          const numero = Number(valoresBrutos[criterio.id]);
+          if (Number.isNaN(numero) || numero < 0 || numero > 100) {
+            setErroAvaliacao(`Preencha ${criterio.nome} com um valor entre 0 e 100.`);
+            return;
+          }
+          valoresNumericos[criterio.id] = numero;
+        }
+
+        pendentes.push({ requisito, valoresNumericos });
+        continue;
       }
-      valoresNumericos[criterio.id] = numero;
+
+      if (statusSelecionadoPorHabilidade[requisito.habilidadeId]) {
+        pendentes.push({ requisito });
+      }
     }
 
-    const percentualGeral = calcularPercentualCriterios(criterios, valoresNumericos);
-    if (percentualGeral == null) {
-      setErro('Cadastre critérios ativos para salvar a avaliação detalhada.');
+    if (pendentes.length === 0) {
+      setErroAvaliacao('Marque ao menos um status ou preencha os critérios de alguma habilidade antes de salvar.');
       return;
     }
 
-    setSalvandoHabilidadeId(habilidadeId);
-    setErro(null);
+    setSalvandoTudo(true);
 
-    try {
-      await registrarAvaliacaoDetalhadaEvolucao({
-        alunoId,
-        habilidadeId,
-        metodologiaId: metodologiaAtual.metodologiaId,
-        professorId,
-        observacoes: observacoesRapidas[habilidadeId]?.trim() || null,
-        precisaAtencao,
-        prioridadeTreinamento: precisaAtencao ? 1 : null,
-        criterios: criterios.map((criterio) => ({
-          criterioId: criterio.id,
-          percentual: valoresNumericos[criterio.id],
-          observacoes: null,
-        })),
-        dataAvaliacao: undefined,
-      });
+    const duplicadas: Pendente[] = [];
+    const falhas: string[] = [];
 
-      setHabilidadeDetalhadaAberta(null);
-      await carregar();
-    } catch (error) {
-      console.error(error);
-      setErro('Erro ao salvar avaliação detalhada. Tente novamente.');
-    } finally {
-      setSalvandoHabilidadeId(null);
+    for (const pendente of pendentes) {
+      const sobrescrever = habilidadesParaSobrescrever.has(pendente.requisito.habilidadeId);
+      try {
+        if (pendente.valoresNumericos) {
+          await registrarDetalhadaInterna(pendente.requisito, pendente.valoresNumericos, sobrescrever);
+        } else {
+          await registrarRapidaInterna(pendente.requisito, sobrescrever);
+        }
+      } catch (error) {
+        if (error instanceof AvaliacaoDuplicadaError) {
+          duplicadas.push(pendente);
+        } else {
+          console.error(error);
+          falhas.push(pendente.requisito.habilidadeNome);
+        }
+      }
     }
+
+    setSalvandoTudo(false);
+
+    if (duplicadas.length > 0) {
+      confirmar(
+        'Avaliação já registrada hoje',
+        `${duplicadas.length === 1 ? 'Esta habilidade já tem' : `Estas ${duplicadas.length} habilidades já têm`} avaliação registrada hoje: ${duplicadas
+          .map((item) => item.requisito.habilidadeNome)
+          .join(', ')}. Sobrescrever?`,
+        'Sobrescrever',
+        () =>
+          salvarTodasAvaliacoes(
+            new Set([...habilidadesParaSobrescrever, ...duplicadas.map((item) => item.requisito.habilidadeId)])
+          )
+      );
+      return;
+    }
+
+    if (falhas.length > 0) {
+      setErroAvaliacao(`Erro ao salvar avaliação de: ${falhas.join(', ')}. Tente novamente.`);
+      return;
+    }
+
+    setStatusSelecionadoPorHabilidade({});
+    setAvaliacaoAberta(false);
+    setPassoAtual(0);
+    carrosselRef.current?.scrollTo({ x: 0, animated: false });
+    await carregar();
   }
 
   async function atribuirMetodologia() {
@@ -346,6 +455,8 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
     }
   }
 
+  const requisitoAtual = requisitos[passoAtual];
+  const statusAtualRequisitoAtual = requisitoAtual ? statusHabilidades.find((item) => item.habilidadeId === requisitoAtual.habilidadeId) : undefined;
   const nomeExibicaoAluno = aluno?.nome ?? nomeFallback;
   // Indicador complementar ao percentual de progresso — não substitui a
   // barra (docs/product/evolucao-vs-desempenho.md §8.2).
@@ -401,11 +512,24 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
           <>
             {podeEditar && !metodologiaAtual ? (
               <View style={styles.cardBase}>
-                <Text style={styles.cardTag}>Atribuir metodologia</Text>
-                <Text style={styles.cardTexto}>
-                  Este aluno ainda não tem metodologia e nível configurados — escolha abaixo para começar a
-                  acompanhar a evolução dele.
-                </Text>
+                <View style={styles.legendaCabecalho}>
+                  <Text style={styles.cardTag}>Atribuir metodologia</Text>
+                  <TouchableOpacity
+                    testID="evolucao-botao-ajuda-atribuir"
+                    style={styles.botaoAjuda}
+                    onPress={() => setAjudaAtribuirAberta((atual) => !atual)}
+                    accessibilityRole="button"
+                    accessibilityLabel="O que é atribuir metodologia"
+                  >
+                    <Text style={styles.botaoAjudaTexto}>?</Text>
+                  </TouchableOpacity>
+                </View>
+                {ajudaAtribuirAberta ? (
+                  <Text style={styles.cardTexto}>
+                    Este aluno ainda não tem metodologia e nível configurados — escolha abaixo para começar a
+                    acompanhar a evolução dele.
+                  </Text>
+                ) : null}
 
                 {metodologiasDisponiveis.length === 0 ? (
                   <Text style={styles.cardTexto}>
@@ -487,11 +611,24 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
 
             {podeEditar && metodologiaAtual && niveisParaPromocao.length > 0 ? (
               <View style={styles.cardBase}>
-                <Text style={styles.cardTag}>Registrar nível conquistado</Text>
-                <Text style={styles.cardTexto}>
-                  O sistema indica prontidão, mas não promove sozinho — confirme abaixo quando o aluno conquistar o
-                  próximo nível.
-                </Text>
+                <View style={styles.legendaCabecalho}>
+                  <Text style={styles.cardTag}>Registrar nível conquistado</Text>
+                  <TouchableOpacity
+                    testID="evolucao-botao-ajuda-promocao"
+                    style={styles.botaoAjuda}
+                    onPress={() => setAjudaPromocaoAberta((atual) => !atual)}
+                    accessibilityRole="button"
+                    accessibilityLabel="O que é registrar nível conquistado"
+                  >
+                    <Text style={styles.botaoAjudaTexto}>?</Text>
+                  </TouchableOpacity>
+                </View>
+                {ajudaPromocaoAberta ? (
+                  <Text style={styles.cardTexto}>
+                    O sistema indica prontidão, mas não promove sozinho — confirme abaixo quando o aluno conquistar o
+                    próximo nível.
+                  </Text>
+                ) : null}
 
                 <View style={styles.statusGrid}>
                   {niveisParaPromocao.map((nivel) => {
@@ -544,16 +681,21 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
                 <Text style={styles.cardTag}>Radar pedagógico</Text>
                 <Text style={styles.cardTexto}>Resumo por macroárea</Text>
 
-                {progresso.resumoCategorias.length >= 3 ? (
-                  <View style={styles.radarWrap}>
-                    <RadarChart
-                      eixos={progresso.resumoCategorias.map((categoria) => ({
-                        id: categoria.categoriaId,
-                        label: categoria.categoriaNome,
-                        percentual: categoria.percentual,
-                      }))}
-                    />
-                  </View>
+                <View style={styles.radarWrap}>
+                  <RadarChart
+                    eixos={progresso.resumoCategorias.map((categoria) => ({
+                      id: categoria.categoriaId,
+                      label: categoria.categoriaNome,
+                      percentual: categoria.percentual,
+                    }))}
+                  />
+                </View>
+
+                {progresso.resumoCategorias.length < 3 ? (
+                  <Text style={styles.legendaStatus}>
+                    O radar fica completo a partir de 3 macroáreas cadastradas neste nível — este aqui tem{' '}
+                    {progresso.resumoCategorias.length}.
+                  </Text>
                 ) : null}
 
                 {progresso.resumoCategorias.map((categoria) => (
@@ -589,124 +731,37 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
 
             {podeEditar && requisitos.length ? (
               <View style={styles.cardBase}>
-                <Text style={styles.cardTag}>Avaliação rápida</Text>
-                <Text style={styles.cardTexto}>Registre o status atual das habilidades do nível.</Text>
-                {requisitos.map((requisito) => {
-                  const statusAtual = statusPorHabilidade.get(requisito.habilidadeId);
-                  const salvando = salvandoHabilidadeId === requisito.habilidadeId;
-                  const criterios = criteriosPorHabilidade[requisito.habilidadeId] ?? [];
-                  const detalhadaAberta = habilidadeDetalhadaAberta === requisito.habilidadeId;
-                  return (
-                    <View key={requisito.habilidadeId} style={styles.avaliacaoItem}>
-                      <View style={styles.avaliacaoCabecalho}>
-                        <View style={styles.avaliacaoTextoWrap}>
-                          <Text style={styles.faltanteNome}>{requisito.habilidadeNome}</Text>
-                          <Text style={styles.faltanteMeta}>{requisito.categoriaNome}</Text>
-                          <Text style={styles.cardTexto}>
-                            Atual: {statusAtual ? statusAtual.statusAtual.replaceAll('_', ' ') : 'sem avaliação'} · Meta: {requisito.statusMinimo.replaceAll('_', ' ')}
-                          </Text>
-                        </View>
-                        {salvando ? <ActivityIndicator color={colors.primary} /> : null}
-                      </View>
+                <View style={styles.legendaCabecalho}>
+                  <Text style={styles.cardTag}>Avaliação</Text>
+                  <TouchableOpacity
+                    testID="evolucao-botao-ajuda-avaliacao-rapida"
+                    style={styles.botaoAjuda}
+                    onPress={() => setAjudaAvaliacaoRapidaAberta((atual) => !atual)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Como funciona a avaliação"
+                  >
+                    <Text style={styles.botaoAjudaTexto}>?</Text>
+                  </TouchableOpacity>
+                </View>
+                {ajudaAvaliacaoRapidaAberta ? (
+                  <Text style={styles.cardTexto}>
+                    Abra a avaliação pra registrar o status de cada habilidade do nível — ao salvar, o radar, o
+                    progresso e a jornada do aluno são atualizados na hora. Veja o detalhe de cada habilidade em "O
+                    que falta conquistar".
+                  </Text>
+                ) : null}
 
-                      <View style={styles.statusGrid}>
-                        {STATUS_AVALIACAO_RAPIDA.map((opcao) => {
-                          const ativo = statusAtual?.statusAtual === opcao.valor;
-                          return (
-                            <TouchableOpacity
-                              key={opcao.valor}
-                              style={[styles.statusChip, ativo && styles.statusChipAtivo]}
-                              onPress={() => salvarAvaliacaoRapida(requisito.habilidadeId, opcao.valor)}
-                              disabled={salvando}
-                            >
-                              <Text style={[styles.statusChipTexto, ativo && styles.statusChipTextoAtivo]}>{opcao.label}</Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-
-                      <TextInput
-                        style={styles.inputObservacao}
-                        value={observacoesRapidas[requisito.habilidadeId] ?? ''}
-                        onChangeText={(texto) => {
-                          setObservacoesRapidas((atual) => ({ ...atual, [requisito.habilidadeId]: texto }));
-                        }}
-                        placeholder="Observação rápida do professor"
-                        multiline
-                      />
-
-                      {criterios.length ? (
-                        <TouchableOpacity
-                          style={[styles.botaoDetalhado, salvando && styles.botaoSecundarioDesabilitado]}
-                          onPress={() => {
-                            setHabilidadeDetalhadaAberta((atual) =>
-                              atual === requisito.habilidadeId ? null : requisito.habilidadeId
-                            );
-                          }}
-                          disabled={salvando}
-                        >
-                          <Text style={styles.botaoDetalhadoTexto}>
-                            {detalhadaAberta ? 'Fechar avaliação detalhada' : 'Abrir avaliação detalhada'}
-                          </Text>
-                        </TouchableOpacity>
-                      ) : null}
-
-                      {detalhadaAberta ? (
-                        <View style={styles.detalheBox}>
-                          {criterios.map((criterio) => (
-                            <View key={criterio.id} style={styles.criterioLinha}>
-                              <View style={styles.criterioTextoWrap}>
-                                <Text style={styles.criterioNome}>{criterio.nome}</Text>
-                                <Text style={styles.criterioPeso}>Peso {criterio.peso}</Text>
-                                {criterio.descricao ? <Text style={styles.cardTexto}>{criterio.descricao}</Text> : null}
-                              </View>
-                              <TextInput
-                                style={styles.inputCriterio}
-                                value={valoresCriterios[requisito.habilidadeId]?.[criterio.id] ?? ''}
-                                onChangeText={(texto) => {
-                                  setValoresCriterios((atual) => ({
-                                    ...atual,
-                                    [requisito.habilidadeId]: {
-                                      ...(atual[requisito.habilidadeId] ?? {}),
-                                      [criterio.id]: texto,
-                                    },
-                                  }));
-                                }}
-                                keyboardType="numeric"
-                                placeholder="0-100"
-                              />
-                            </View>
-                          ))}
-
-                          <View style={styles.detalheAcoes}>
-                            <TouchableOpacity
-                              style={[styles.botaoSalvarDetalhado, salvando && styles.botaoSecundarioDesabilitado]}
-                              onPress={() => salvarAvaliacaoDetalhada(requisito.habilidadeId)}
-                              disabled={salvando}
-                            >
-                              <Text style={styles.botaoSalvarDetalhadoTexto}>Salvar avaliação detalhada</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={[styles.botaoAtencao, salvando && styles.botaoSecundarioDesabilitado]}
-                              onPress={() => salvarAvaliacaoDetalhada(requisito.habilidadeId, true)}
-                              disabled={salvando}
-                            >
-                              <Text style={styles.botaoAtencaoTexto}>Salvar e marcar atenção</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      ) : null}
-
-                      <TouchableOpacity
-                        style={[styles.botaoAtencao, salvando && styles.botaoSecundarioDesabilitado]}
-                        onPress={() => salvarAvaliacaoRapida(requisito.habilidadeId, 'em_desenvolvimento', true)}
-                        disabled={salvando}
-                      >
-                        <Text style={styles.botaoAtencaoTexto}>Marcar como precisa de atenção</Text>
-                      </TouchableOpacity>
-                    </View>
-                  );
-                })}
+                <TouchableOpacity
+                  testID="evolucao-botao-iniciar-avaliacao"
+                  style={styles.botaoAvaliar}
+                  onPress={() => {
+                    setPassoAtual(0);
+                    setAvaliacaoAberta(true);
+                    carrosselRef.current?.scrollTo({ x: 0, animated: false });
+                  }}
+                >
+                  <Text style={styles.botaoAvaliarTexto}>Iniciar avaliação do aluno</Text>
+                </TouchableOpacity>
               </View>
             ) : null}
 
@@ -731,6 +786,221 @@ export function EvolucaoScreen({ alunoId, tituloPagina, nomeFallback, podeEditar
           </>
         ) : null}
       </ScrollView>
+
+      <FormModal
+        visible={avaliacaoAberta}
+        title={`Avaliação de ${nomeExibicaoAluno}`}
+        onClose={() => {
+          setAvaliacaoAberta(false);
+          setErroAvaliacao(null);
+          setPassoAtual(0);
+          carrosselRef.current?.scrollTo({ x: 0, animated: false });
+        }}
+        stickyHeader={
+          requisitoAtual ? (
+            <View style={styles.avaliacaoStickyHeader}>
+              <Text style={styles.faltanteNome}>{requisitoAtual.habilidadeNome}</Text>
+              <Text style={styles.faltanteMeta}>{requisitoAtual.categoriaNome}</Text>
+              <Text style={styles.cardTexto}>
+                Atual: {statusAtualRequisitoAtual ? statusAtualRequisitoAtual.statusAtual.replaceAll('_', ' ') : 'sem avaliação'} · Meta: {requisitoAtual.statusMinimo.replaceAll('_', ' ')}
+              </Text>
+              <View style={styles.carrosselDots}>
+                {requisitos.map((item, indice) => (
+                  <TouchableOpacity
+                    key={item.habilidadeId}
+                    testID={`evolucao-dot-${indice}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Ir para a habilidade ${indice + 1} de ${requisitos.length}`}
+                    onPress={() => {
+                      setPassoAtual(indice);
+                      carrosselRef.current?.scrollTo({ x: indice * larguraPagina, animated: true });
+                    }}
+                    disabled={salvandoTudo}
+                    hitSlop={6}
+                  >
+                    <View style={[styles.dot, indice === passoAtual && styles.dotAtivo]} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          ) : null
+        }
+      >
+        <View style={styles.legendaCabecalho}>
+          <Text style={styles.cardTag}>Como avaliar</Text>
+          <TouchableOpacity
+            testID="evolucao-botao-ajuda-status"
+            style={styles.botaoAjuda}
+            onPress={() => setLegendaAberta((atual) => !atual)}
+            accessibilityRole="button"
+            accessibilityLabel="Como avaliar e o que significa cada status"
+          >
+            <Text style={styles.botaoAjudaTexto}>?</Text>
+          </TouchableOpacity>
+        </View>
+
+        {legendaAberta ? (
+          <>
+            <Text style={styles.cardTexto}>
+              Marque o status (e/ou os critérios) de cada habilidade que quiser avaliar e toque em "Salvar
+              avaliação" no fim — o radar, o progresso e a jornada do aluno são atualizados de uma vez só.
+            </Text>
+            <Text style={styles.legendaStatus}>
+              Não iniciado → Aprendendo → Em desenvolvimento → Dominado → Consolidado
+            </Text>
+          </>
+        ) : null}
+
+        {requisitos.length ? (
+          <>
+            <View onLayout={(evento) => setLarguraPagina(evento.nativeEvent.layout.width)}>
+              {larguraPagina > 0 ? (
+                <ScrollView
+                  ref={carrosselRef}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  scrollEventThrottle={16}
+                  onMomentumScrollEnd={(evento) => {
+                    const indice = Math.round(evento.nativeEvent.contentOffset.x / larguraPagina);
+                    setPassoAtual(indice);
+                  }}
+                >
+                  {requisitos.map((requisito, indice) => {
+                    const statusAtual = statusPorHabilidade.get(requisito.habilidadeId);
+                    const statusSelecionado = statusSelecionadoPorHabilidade[requisito.habilidadeId];
+                    const criterios = criteriosPorHabilidade[requisito.habilidadeId] ?? [];
+                    const precisaAtencao = atencaoPorHabilidade[requisito.habilidadeId] ?? false;
+                    const valoresBrutos = valoresCriterios[requisito.habilidadeId] ?? {};
+                    const valoresNumericos: Record<string, number> = {};
+                    for (const criterio of criterios) {
+                      const bruto = valoresBrutos[criterio.id];
+                      const numero = Number(bruto);
+                      if (bruto?.trim() && !Number.isNaN(numero)) {
+                        valoresNumericos[criterio.id] = numero;
+                      }
+                    }
+                    const pontuacaoPreview = criterios.length
+                      ? calcularPercentualCriterios(criterios, valoresNumericos)
+                      : null;
+                    const ultimaPagina = indice === requisitos.length - 1;
+
+                    return (
+                      <View key={requisito.habilidadeId} style={[styles.avaliacaoItem, { width: larguraPagina }]}>
+                        <View style={styles.statusGrid}>
+                          {STATUS_AVALIACAO_RAPIDA.map((opcao) => {
+                            const ativo = (statusSelecionado ?? statusAtual?.statusAtual) === opcao.valor;
+                            return (
+                              <TouchableOpacity
+                                key={opcao.valor}
+                                style={[styles.statusChip, ativo && styles.statusChipAtivo]}
+                                onPress={() =>
+                                  setStatusSelecionadoPorHabilidade((atual) => ({
+                                    ...atual,
+                                    [requisito.habilidadeId]: opcao.valor,
+                                  }))
+                                }
+                                disabled={salvandoTudo}
+                              >
+                                <Text style={[styles.statusChipTexto, ativo && styles.statusChipTextoAtivo]}>{opcao.label}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.botaoAtencao,
+                            precisaAtencao && styles.botaoAtencaoAtivo,
+                            salvandoTudo && styles.botaoSecundarioDesabilitado,
+                          ]}
+                          onPress={() =>
+                            setAtencaoPorHabilidade((atual) => ({ ...atual, [requisito.habilidadeId]: !precisaAtencao }))
+                          }
+                          disabled={salvandoTudo}
+                        >
+                          <Text style={[styles.botaoAtencaoTexto, precisaAtencao && styles.botaoAtencaoTextoAtivo]}>
+                            {precisaAtencao ? '⚠ Vai treinar com prioridade' : 'Precisa de atenção?'}
+                          </Text>
+                        </TouchableOpacity>
+                        <Text style={styles.legendaStatus}>
+                          Marque isso pra sinalizar que essa habilidade deve ter prioridade nos próximos treinos do aluno.
+                        </Text>
+
+                        <TextInput
+                          style={styles.inputObservacao}
+                          value={observacoesRapidas[requisito.habilidadeId] ?? ''}
+                          onChangeText={(texto) => {
+                            setObservacoesRapidas((atual) => ({ ...atual, [requisito.habilidadeId]: texto }));
+                          }}
+                          placeholder="Observação — escreva o que achar necessário, sempre opcional"
+                          multiline
+                        />
+
+                        {criterios.length ? (
+                          <View style={styles.detalheBox}>
+                            <Text style={styles.cardTag}>Avaliação detalhada por critério</Text>
+                            {criterios.map((criterio) => (
+                              <View key={criterio.id} style={styles.criterioLinha}>
+                                <View style={styles.criterioTextoWrap}>
+                                  <Text style={styles.criterioNome}>{criterio.nome}</Text>
+                                  <Text style={styles.criterioPeso}>Peso {criterio.peso}</Text>
+                                  {criterio.descricao ? <Text style={styles.cardTexto}>{criterio.descricao}</Text> : null}
+                                </View>
+                                <TextInput
+                                  style={styles.inputCriterio}
+                                  value={valoresCriterios[requisito.habilidadeId]?.[criterio.id] ?? ''}
+                                  onChangeText={(texto) => {
+                                    setValoresCriterios((atual) => ({
+                                      ...atual,
+                                      [requisito.habilidadeId]: {
+                                        ...(atual[requisito.habilidadeId] ?? {}),
+                                        [criterio.id]: texto,
+                                      },
+                                    }));
+                                  }}
+                                  keyboardType="numeric"
+                                  placeholder="0-100"
+                                />
+                              </View>
+                            ))}
+
+                            {pontuacaoPreview != null ? (
+                              <Text style={styles.pontuacaoTexto}>Pontuação calculada: {pontuacaoPreview}%</Text>
+                            ) : null}
+                          </View>
+                        ) : null}
+
+                        {ultimaPagina ? (
+                          <>
+                            {erroAvaliacao ? <Text style={styles.erro}>{erroAvaliacao}</Text> : null}
+
+                            <TouchableOpacity
+                              testID="evolucao-botao-salvar-avaliacao"
+                              style={[styles.botaoSalvarDetalhado, salvandoTudo && styles.botaoSecundarioDesabilitado]}
+                              onPress={() => salvarTodasAvaliacoes()}
+                              disabled={salvandoTudo}
+                            >
+                              {salvandoTudo ? (
+                                <ActivityIndicator color={colors.onPrimary} />
+                              ) : (
+                                <Text style={styles.botaoSalvarDetalhadoTexto}>Salvar avaliação</Text>
+                              )}
+                            </TouchableOpacity>
+                          </>
+                        ) : (
+                          <Text style={styles.legendaStatus}>Arraste para o lado pra ver a próxima habilidade</Text>
+                        )}
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              ) : null}
+            </View>
+          </>
+        ) : null}
+      </FormModal>
+
       <Footer />
     </>
   );
@@ -803,6 +1073,31 @@ const styles = StyleSheet.create({
     ...type.body,
     color: colors.textMuted,
   },
+  legendaStatus: {
+    ...type.caption,
+    color: colors.primary,
+  },
+  legendaCabecalho: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  botaoAjuda: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.primarySoft,
+    backgroundColor: colors.surfaceTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  botaoAjudaTexto: {
+    ...type.caption,
+    color: colors.primary,
+    fontWeight: 'bold',
+  },
   progressoValor: {
     fontFamily: type.display.fontFamily,
     fontSize: 30,
@@ -872,14 +1167,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     gap: spacing.sm,
   },
-  avaliacaoCabecalho: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  avaliacaoTextoWrap: {
-    flex: 1,
+  avaliacaoStickyHeader: {
     gap: spacing.xs,
   },
   statusGrid: {
@@ -919,19 +1207,34 @@ const styles = StyleSheet.create({
     color: colors.text,
     textAlignVertical: 'top',
   },
-  botaoDetalhado: {
-    alignSelf: 'flex-start',
+  botaoAvaliar: {
     minHeight: 44,
     borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.primarySoft,
-    backgroundColor: colors.surfaceTint,
+    backgroundColor: colors.primary,
     paddingHorizontal: spacing.md,
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  botaoDetalhadoTexto: {
-    ...type.caption,
-    color: colors.primary,
+  botaoAvaliarTexto: {
+    fontFamily: type.subtitle.fontFamily,
+    fontSize: type.subtitle.fontSize,
+    color: colors.onPrimary,
+  },
+  carrosselDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.border,
+  },
+  dotAtivo: {
+    width: 20,
+    backgroundColor: colors.primary,
   },
   detalheBox: {
     gap: spacing.sm,
@@ -971,20 +1274,17 @@ const styles = StyleSheet.create({
     color: colors.text,
     textAlign: 'center',
   },
-  detalheAcoes: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
   botaoSalvarDetalhado: {
     minHeight: 44,
     borderRadius: radius.md,
     backgroundColor: colors.primary,
     paddingHorizontal: spacing.md,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   botaoSalvarDetalhadoTexto: {
-    ...type.caption,
+    fontFamily: type.subtitle.fontFamily,
+    fontSize: type.subtitle.fontSize,
     color: colors.onPrimary,
   },
   botaoAtencao: {
@@ -1000,6 +1300,12 @@ const styles = StyleSheet.create({
   botaoAtencaoTexto: {
     ...type.caption,
     color: colors.danger,
+  },
+  botaoAtencaoAtivo: {
+    backgroundColor: colors.danger,
+  },
+  botaoAtencaoTextoAtivo: {
+    color: colors.onPrimary,
   },
   botaoSecundarioDesabilitado: {
     opacity: 0.6,

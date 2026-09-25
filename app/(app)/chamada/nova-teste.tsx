@@ -1,5 +1,5 @@
-import { Redirect, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -13,15 +13,18 @@ import {
 } from 'react-native';
 
 import {
+  atualizarAulaTeste,
   criarAulaTeste,
   diaSemanaPorDataISO,
+  getAulaTeste,
   getGradeSemanal,
   getResponsabilidadesProfessor,
 } from '../../../src/features/chamada/api';
-import { formatDataISO } from '../../../src/features/chamada/calendar';
+import { dataISOAntesDeHoje, formatDataISO } from '../../../src/features/chamada/calendar';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { PageHeader } from '../../../src/components/PageHeader';
+import { WebModal } from '../../../src/components/WebModal';
 import { DateRangePicker } from '../../../src/components/DateRangePicker';
 import { Footer } from '../../../src/components/Footer';
 import { Dropdown } from '../../../src/components/Dropdown';
@@ -43,6 +46,7 @@ function formatModulos(modulos: number[]) {
 
 export default function NovaAulaTeste() {
   const router = useRouter();
+  const { id } = useLocalSearchParams<{ id?: string }>();
   const { meuPapel, session } = useAuth();
   const souDono = meuPapel === 'dono';
 
@@ -55,6 +59,21 @@ export default function NovaAulaTeste() {
   const [observacoes, setObservacoes] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [erroSalvar, setErroSalvar] = useState<string | null>(null);
+  const editando = Boolean(id);
+
+  const { data: aulaExistente, loading: carregandoAula } = useAsyncData(
+    () => getAulaTeste(id!),
+    [id],
+    { enabled: editando, mensagemErro: 'Erro ao carregar aula teste. Tente novamente.' }
+  );
+
+  useEffect(() => {
+    if (!aulaExistente) return;
+    setAulaRecorrenteId(aulaExistente.aula_recorrente_id);
+    setDataISO(aulaExistente.data);
+    setObservacoes(aulaExistente.observacoes ?? '');
+    setCandidatos(aulaExistente.candidatos.map((c) => ({ nome: c.nome, telefone: c.telefone ?? '' })));
+  }, [aulaExistente]);
 
   const {
     data: dadosIniciais,
@@ -71,7 +90,7 @@ export default function NovaAulaTeste() {
       return { slots };
     },
     [souDono, session?.user.id],
-    { mensagemErro: 'Erro ao carregar dados. Tente novamente.' }
+    { onFocus: true, mensagemErro: 'Erro ao carregar dados. Tente novamente.' }
   );
   const slots = dadosIniciais?.slots ?? [];
   const error = erroSalvar ?? erroCarregar;
@@ -120,15 +139,19 @@ export default function NovaAulaTeste() {
       setErroSalvar(`Aula teste só pode cair numa ${DIAS_SEMANA[diaSemanaEsperado!]}, o mesmo dia desse horário da grade.`);
       return;
     }
+    if (dataISOAntesDeHoje(dataISO)) {
+      setErroSalvar('Não é possível agendar uma aula teste em uma data retroativa.');
+      return;
+    }
 
     setSalvando(true);
     try {
-      await criarAulaTeste(
-        aulaRecorrenteId,
-        dataISO,
-        candidatos.map((c) => ({ nome: c.nome, telefone: c.telefone || null })),
-        observacoes.trim() || null
-      );
+      const dadosCandidatos = candidatos.map((c) => ({ nome: c.nome, telefone: c.telefone || null }));
+      if (editando) {
+        await atualizarAulaTeste(id!, aulaRecorrenteId, dataISO, dadosCandidatos, observacoes.trim() || null);
+      } else {
+        await criarAulaTeste(aulaRecorrenteId, dataISO, dadosCandidatos, observacoes.trim() || null);
+      }
       if (router.canGoBack()) router.back();
       else router.replace('/');
     } catch (err) {
@@ -145,18 +168,29 @@ export default function NovaAulaTeste() {
 
   if (loading) {
     return (
-      <>
-        <PageHeader titulo="Aula teste" />
+      <WebModal>
+        <PageHeader titulo={editando ? 'Editar aula teste' : 'Aula teste'} />
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
         </View>
-      </>
+      </WebModal>
+    );
+  }
+
+  if (carregandoAula) {
+    return (
+      <WebModal>
+        <PageHeader titulo="Editar aula teste" />
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </WebModal>
     );
   }
 
   return (
-    <>
-      <PageHeader titulo="Aula teste" />
+    <WebModal>
+      <PageHeader titulo={editando ? 'Editar aula teste' : 'Aula teste'} />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <Text style={[type.label, styles.rotulo]}>Horário da grade</Text>
@@ -267,13 +301,13 @@ export default function NovaAulaTeste() {
             {salvando ? (
               <ActivityIndicator color={colors.onPrimary} />
             ) : (
-              <Text style={styles.salvarBotaoTexto}>Agendar aula teste</Text>
+              <Text style={styles.salvarBotaoTexto}>{editando ? 'Salvar alterações' : 'Agendar aula teste'}</Text>
             )}
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
       <Footer />
-    </>
+    </WebModal>
   );
 }
 

@@ -22,6 +22,8 @@ export type MeuAluno = {
   data_nascimento: string | null;
   responsavel_nome: string | null;
   responsavel_telefone: string | null;
+  avatar_path: string | null;
+  ativo: boolean;
 };
 
 // Vínculo criado por e-mail (0020/0033) mas ainda não confirmado por quem
@@ -202,16 +204,30 @@ export function AuthProvider({ children }: PropsWithChildren) {
       return;
     }
     setMeusAlunosCarregado(false);
-    const { data, error } = await supabase
+      const consulta = await supabase
       .from('alunos')
-      .select('id, nome, modulo, data_nascimento, responsavel_nome, responsavel_telefone')
+      .select('id, nome, modulo, data_nascimento, responsavel_nome, responsavel_telefone, avatar_path, ativo')
+      .eq('ativo', true)
       .eq('perfil_id', session.user.id)
       .order('nome');
-    if (error) {
-      console.error(error);
+      if (consulta.error?.code === '42703') {
+        const legado = await supabase
+          .from('alunos')
+          .select('id, nome, modulo, data_nascimento, responsavel_nome, responsavel_telefone, ativo')
+          .eq('perfil_id', session.user.id)
+          .eq('ativo', true)
+          .order('nome');
+        if (legado.error) {
+          console.error(legado.error);
+          setMeusAlunos([]);
+        } else {
+          setMeusAlunos((legado.data ?? []).map((aluno) => ({ ...aluno, avatar_path: null })) as MeuAluno[]);
+        }
+      } else if (consulta.error) {
+        console.error(consulta.error);
       setMeusAlunos([]);
     } else {
-      setMeusAlunos((data ?? []) as MeuAluno[]);
+        setMeusAlunos((consulta.data ?? []) as MeuAluno[]);
     }
     setMeusAlunosCarregado(true);
   }, [session?.user.id]);

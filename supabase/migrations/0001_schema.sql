@@ -196,6 +196,34 @@ create trigger trg_valida_reposicao
   before insert or update on presencas
   for each row execute function valida_reposicao();
 
+grant select on public.perfis to anon;
+grant select, insert, update, delete on public.perfis to authenticated;
+grant select, insert, update, delete on public.perfis to service_role;
+
+grant select on public.alunos to anon;
+grant select, insert, update, delete on public.alunos to authenticated;
+grant select, insert, update, delete on public.alunos to service_role;
+
+grant select on public.contratos to anon;
+grant select, insert, update, delete on public.contratos to authenticated;
+grant select, insert, update, delete on public.contratos to service_role;
+
+grant select on public.testes_nivel to anon;
+grant select, insert, update, delete on public.testes_nivel to authenticated;
+grant select, insert, update, delete on public.testes_nivel to service_role;
+
+grant select on public.aulas_recorrentes to anon;
+grant select, insert, update, delete on public.aulas_recorrentes to authenticated;
+grant select, insert, update, delete on public.aulas_recorrentes to service_role;
+
+grant select on public.aulas to anon;
+grant select, insert, update, delete on public.aulas to authenticated;
+grant select, insert, update, delete on public.aulas to service_role;
+
+grant select on public.presencas to anon;
+grant select, insert, update, delete on public.presencas to authenticated;
+grant select, insert, update, delete on public.presencas to service_role;
+
 -- ---------------------------------------------------------------------------
 -- RLS
 -- ---------------------------------------------------------------------------

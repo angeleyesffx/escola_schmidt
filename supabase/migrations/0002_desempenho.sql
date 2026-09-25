@@ -64,3 +64,11 @@ create policy avaliacao_leitura on avaliacoes_desempenho
   );
 create policy avaliacao_escrita on avaliacoes_desempenho
   for all using (eh_equipe()) with check (eh_equipe());
+
+grant select on public.habilidades to anon;
+grant select, insert, update, delete on public.habilidades to authenticated;
+grant select, insert, update, delete on public.habilidades to service_role;
+
+grant select on public.avaliacoes_desempenho to anon;
+grant select, insert, update, delete on public.avaliacoes_desempenho to authenticated;
+grant select, insert, update, delete on public.avaliacoes_desempenho to service_role;

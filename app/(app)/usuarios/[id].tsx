@@ -1,15 +1,17 @@
 import { Redirect, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import { desvincularPerfil, getAlunos, vincularPerfil, type Aluno } from '../../../src/features/alunos/api';
 import { atualizarAtivo, atualizarPapel, getUsuario, type Usuario } from '../../../src/features/usuarios/api';
 import { useAuth, type Papel } from '../../../src/features/auth/AuthProvider';
 import { paraBR } from '../../../src/lib/dataBR';
 import { confirmar } from '../../../src/lib/confirmar';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
+import { WebModal } from '../../../src/components/WebModal';
 import { Chip } from '../../../src/components/Chip';
-import { colors, spacing, type } from '../../../src/constants/theme';
+import { colors, spacing, touchTarget, type } from '../../../src/constants/theme';
 
 const PAPEIS: { valor: Papel; label: string }[] = [
   { valor: 'aluno', label: 'Aluno' },
@@ -23,6 +25,7 @@ export default function UsuarioDetalhe() {
   const { session, meuPapel } = useAuth();
 
   const [usuario, setUsuario] = useState<Usuario | null>(null);
+  const [alunos, setAlunos] = useState<Aluno[]>([]);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +34,13 @@ export default function UsuarioDetalhe() {
     setLoading(true);
     setError(null);
     try {
-      setUsuario(await getUsuario(id));
+      const dadosUsuario = await getUsuario(id);
+      setUsuario(dadosUsuario);
+      if (dadosUsuario.papel === 'aluno' || dadosUsuario.papel === 'responsavel' || dadosUsuario.papel === 'professor') {
+        setAlunos(await getAlunos());
+      } else {
+        setAlunos([]);
+      }
     } catch (err) {
       console.error(err);
       setError('Erro ao carregar usuário. Tente novamente.');
@@ -108,23 +117,62 @@ export default function UsuarioDetalhe() {
     }
   }
 
+  async function vincular(alunoId: string) {
+    if (!usuario) return;
+    setSalvando(true);
+    setError(null);
+    try {
+      await vincularPerfil(alunoId, usuario.id);
+      setAlunos(await getAlunos());
+    } catch (err) {
+      console.error(err);
+      setError('Erro ao vincular cadastro. Tente novamente.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  function confirmarDesvincular(aluno: Aluno) {
+    if (!usuario) return;
+    confirmar(
+      'Desvincular cadastro',
+      `Desvincular ${aluno.nome} da conta de ${usuario.nome}?`,
+      'Desvincular',
+      () => desvincular(aluno.id)
+    );
+  }
+
+  async function desvincular(alunoId: string) {
+    setSalvando(true);
+    setError(null);
+    try {
+      await desvincularPerfil(alunoId);
+      setAlunos(await getAlunos());
+    } catch (err) {
+      console.error(err);
+      setError('Erro ao desvincular cadastro. Tente novamente.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
   if (meuPapel !== 'dono') {
     return <Redirect href="/" />;
   }
 
   if (loading) {
     return (
-      <>
+      <WebModal>
         <PageHeader titulo="Usuário" />
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
         </View>
-      </>
+      </WebModal>
     );
   }
 
   return (
-    <>
+    <WebModal>
       <PageHeader titulo={usuario?.nome ?? 'Usuário'} />
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll}>
@@ -162,13 +210,49 @@ export default function UsuarioDetalhe() {
                 </Text>
               ) : null}
 
+              {usuario.papel === 'aluno' || usuario.papel === 'responsavel' || usuario.papel === 'professor' ? (
+                <View style={styles.vinculos}>
+                  <Text style={[type.label, styles.rotulo]}>Cadastros de aluno vinculados</Text>
+                  {alunos.filter((aluno) => aluno.perfil_id === usuario.id).map((aluno) => (
+                    <View key={aluno.id} style={styles.vinculoCard}>
+                      <Text style={type.subtitle}>{aluno.nome}</Text>
+                      <TouchableOpacity
+                        style={styles.desvincularBotao}
+                        onPress={() => confirmarDesvincular(aluno)}
+                        disabled={salvando}
+                      >
+                        <Text style={styles.desvincularTexto}>Desvincular</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+
+                  <Text style={[type.label, styles.rotulo]}>Registrar como aluno</Text>
+                  {alunos.filter((aluno) => !aluno.perfil_id).length === 0 ? (
+                    <Text style={[type.body, styles.aviso]}>Nenhum cadastro disponível para vínculo.</Text>
+                  ) : (
+                    alunos
+                      .filter((aluno) => !aluno.perfil_id)
+                      .map((aluno) => (
+                        <TouchableOpacity
+                          key={aluno.id}
+                          style={styles.vinculoCard}
+                          onPress={() => vincular(aluno.id)}
+                          disabled={salvando}
+                        >
+                          <Text style={type.subtitle}>+ {aluno.nome}</Text>
+                        </TouchableOpacity>
+                      ))
+                  )}
+                </View>
+              ) : null}
+
               {salvando ? <ActivityIndicator color={colors.primary} style={styles.spinner} /> : null}
             </>
           ) : null}
         </ScrollView>
       </View>
       <Footer />
-    </>
+    </WebModal>
   );
 }
 
@@ -208,5 +292,27 @@ const styles = StyleSheet.create({
   },
   spinner: {
     marginTop: spacing.lg,
+  },
+  vinculos: {
+    marginTop: spacing.md,
+  },
+  vinculoCard: {
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    marginTop: spacing.sm,
+  },
+  desvincularBotao: {
+    minHeight: touchTarget,
+    justifyContent: 'center',
+    marginTop: spacing.xs,
+  },
+  desvincularTexto: {
+    color: colors.danger,
+    fontFamily: type.body.fontFamily,
+    fontSize: type.body.fontSize,
   },
 });

@@ -9,7 +9,6 @@ import {
   getGradeCompleta,
   getModulosAtivos,
   getUsoSlotGrade,
-  type Modulo,
   type SlotGradeAdmin,
 } from '../../../src/features/chamada/api';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
@@ -17,6 +16,7 @@ import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { confirmDelete, confirmSave } from '../../../src/lib/confirmar';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
+import { WebModal } from '../../../src/components/WebModal';
 import { FormModal } from '../../../src/components/FormModal';
 import { RowActions } from '../../../src/components/RowActions';
 import { ToggleAtivo } from '../../../src/components/ToggleAtivo';
@@ -58,6 +58,11 @@ export default function GradeSemanalAdmin() {
   const { data: grade, loading, reload: recarregar } = useAsyncData<SlotGradeAdmin[]>(getGradeCompleta, [], {
     mensagemErro: 'Erro ao carregar a grade. Tente novamente.',
   });
+  const { data: modulosDisponiveis } = useAsyncData(getModulosAtivos, [], {
+    onFocus: true,
+    mensagemErro: 'Erro ao carregar os módulos. Tente novamente.',
+  });
+  const modulosCatalogo = modulosDisponiveis ?? [];
 
   if (!souDono) {
     return <Redirect href="/" />;
@@ -184,7 +189,7 @@ export default function GradeSemanalAdmin() {
   }
 
   return (
-    <>
+    <WebModal>
       <PageHeader titulo="Grade semanal" />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
         <View style={styles.topoRow}>
@@ -207,16 +212,18 @@ export default function GradeSemanalAdmin() {
               </Text>
               <Text style={type.caption}>{formatModulos(slot.modulos)}</Text>
             </View>
-            <ToggleAtivo
-              testID={`grade-slot-${slot.id}-toggle`}
-              ativo={slot.ativo}
-              onToggle={() => alternarAtivo(slot)}
-            />
-            <RowActions
-              testIdBase={`grade-slot-${slot.id}`}
-              onEdit={() => abrirEdicao(slot)}
-              onDelete={() => excluir(slot)}
-            />
+            <View style={styles.itemAcoes}>
+              <ToggleAtivo
+                testID={`grade-slot-${slot.id}-toggle`}
+                ativo={slot.ativo}
+                onToggle={() => alternarAtivo(slot)}
+              />
+              <RowActions
+                testIdBase={`grade-slot-${slot.id}`}
+                onEdit={() => abrirEdicao(slot)}
+                onDelete={() => excluir(slot)}
+              />
+            </View>
           </View>
         ))}
       </ScrollView>
@@ -248,16 +255,24 @@ export default function GradeSemanalAdmin() {
 
         <Text style={[type.label, styles.campoRotulo]}>Módulos</Text>
         <View style={styles.chipsRow}>
-          {MODULOS.map((m) => (
-            <TouchableOpacity
-              key={m}
-              testID={`grade-modulo-${m}`}
-              style={[styles.chip, modulosForm.includes(m) && styles.chipAtivo]}
-              onPress={() => alternarModulo(m)}
-            >
-              <Text style={[styles.chipTexto, modulosForm.includes(m) && styles.chipTextoAtivo]}>{m}</Text>
-            </TouchableOpacity>
-          ))}
+          {modulosCatalogo.length === 0 ? (
+            <Text style={[type.caption, styles.semModulos]}>Nenhum módulo ativo no catálogo.</Text>
+          ) : (
+            modulosCatalogo.map((modulo) => (
+              <TouchableOpacity
+                key={modulo.numero}
+                testID={`grade-modulo-${modulo.numero}`}
+                style={[styles.chip, modulosForm.includes(modulo.numero) && styles.chipAtivo]}
+                onPress={() => alternarModulo(modulo.numero)}
+              >
+                <Text
+                  style={[styles.chipTexto, modulosForm.includes(modulo.numero) && styles.chipTextoAtivo]}
+                >
+                  {modulo.numero}
+                </Text>
+              </TouchableOpacity>
+            ))
+          )}
         </View>
 
         <TouchableOpacity
@@ -275,7 +290,7 @@ export default function GradeSemanalAdmin() {
       </FormModal>
 
       <Footer />
-    </>
+    </WebModal>
   );
 }
 
@@ -324,20 +339,24 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   itemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: spacing.sm,
-    minHeight: touchTarget,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     marginBottom: spacing.sm,
   },
   itemTextoWrap: {
-    flex: 1,
-    marginRight: spacing.sm,
+    gap: 2,
+  },
+  itemAcoes: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
   },
   inativo: {
     color: colors.textMuted,
@@ -385,6 +404,9 @@ const styles = StyleSheet.create({
   },
   chipTextoAtivo: {
     color: colors.onPrimary,
+  },
+  semModulos: {
+    color: colors.textMuted,
   },
   botao: {
     height: touchTarget,

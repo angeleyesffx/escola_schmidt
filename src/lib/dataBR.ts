@@ -21,3 +21,12 @@ export function paraBR(dataISO: string): string {
   const [ano, mes, dia] = dataISO.split('-');
   return `${dia}/${mes}/${ano}`;
 }
+
+export function temIdadeMinima(dataISO: string, idadeMinima = 3): boolean {
+  const data = new Date(`${dataISO}T00:00:00`);
+  if (Number.isNaN(data.getTime())) return false;
+
+  const hoje = new Date();
+  const limite = new Date(hoje.getFullYear() - idadeMinima, hoje.getMonth(), hoje.getDate());
+  return data <= limite;
+}

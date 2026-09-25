@@ -49,13 +49,21 @@ export function ListaAlunosChamada({
                   testID={`chamada-detalhe-status-button-${item.id}-${estado.status}`}
                   style={[
                     styles.botao,
-                    { backgroundColor: ativo ? colors[estado.cor] : colors.pending },
+                    ativo
+                      ? { backgroundColor: colors[estado.cor], borderColor: colors[estado.cor] }
+                      : styles.botaoInativo,
                     bloqueado && styles.botaoDesabilitado,
                   ]}
                   onPress={() => onMarcar(item.id, estado.status)}
                   disabled={bloqueado}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel={estado.legenda}
+                  accessibilityState={{ selected: ativo }}
                 >
-                  <Text style={styles.botaoTexto}>{estado.label}</Text>
+                  <Text style={[styles.botaoTexto, ativo ? styles.botaoTextoAtivo : styles.botaoTextoInativo]}>
+                    {estado.label}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
@@ -116,18 +124,28 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   botao: {
-    width: touchTarget,
-    height: touchTarget,
+    width: touchTarget - 16,
+    height: touchTarget - 16,
     borderRadius: radius.md,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  botaoInativo: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
   },
   botaoDesabilitado: {
     opacity: 0.5,
   },
   botaoTexto: {
-    color: colors.onPrimary,
     fontFamily: type.subtitle.fontFamily,
     fontSize: type.subtitle.fontSize,
+  },
+  botaoTextoAtivo: {
+    color: colors.onPrimary,
+  },
+  botaoTextoInativo: {
+    color: colors.textMuted,
   },
 });

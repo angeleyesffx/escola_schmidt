@@ -1,5 +1,5 @@
 import { criarEvento, getEventosPorPeriodo, getTiposEvento } from './api';
-import { ConfiguracaoFeriadosError, buscarFeriadosEstado, importarFeriados } from './feriados';
+import { buscarFeriadosEstado, importarFeriados } from './feriados';
 
 jest.mock('./api', () => ({
   criarEvento: jest.fn(),
@@ -28,10 +28,16 @@ describe('buscarFeriadosEstado', () => {
     jest.restoreAllMocks();
   });
 
-  it('lança ConfiguracaoFeriadosError quando a chave não está configurada', async () => {
+  it('usa a fonte pública quando a chave não está configurada', async () => {
     delete process.env.EXPO_PUBLIC_FERIADOS_API_KEY;
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [{ date: '2026-01-01', name: 'Ano Novo', type: 'national' }],
+    }) as unknown as typeof fetch;
 
-    await expect(buscarFeriadosEstado('SP', 2026)).rejects.toBeInstanceOf(ConfiguracaoFeriadosError);
+    await expect(buscarFeriadosEstado('SP', 2026)).resolves.toEqual([
+      { id: '2026-01-01', data: '2026-01-01', nome: 'Ano Novo', tipo: 'national' },
+    ]);
   });
 });
 

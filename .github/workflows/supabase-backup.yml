@@ -1,0 +1,60 @@
+name: Backup Supabase
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Dump database
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          mkdir -p backup
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/database.sql
+          test -s backup/database.sql
+
+      - name: Export storage bucket
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          BACKUP_DIR: backup/storage/avatars
+        run: node .github/scripts/export-storage-backup.mjs
+
+      - name: Compress backup
+        id: archive
+        run: |
+          STAMP="$(date -u +%Y-%m-%d-%H%M)"
+          tar -czf "backup-$STAMP.tar.gz" -C backup .
+          echo "stamp=$STAMP" >> "$GITHUB_OUTPUT"
+
+      - name: Publish backup as release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: backup-${{ steps.archive.outputs.stamp }}
+          name: Backup ${{ steps.archive.outputs.stamp }}
+          body: Backup automatico do banco (schema + dados) e do bucket avatars.
+          files: backup-${{ steps.archive.outputs.stamp }}.tar.gz
+          prerelease: true

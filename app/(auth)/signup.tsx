@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 
 import { useAuth, type Titular } from '../../src/features/auth/AuthProvider';
-import { hojeBR, paraBR, paraISO } from '../../src/lib/dataBR';
+import { hojeBR, paraBR, paraISO, temIdadeMinima } from '../../src/lib/dataBR';
 import { PageHeader } from '../../src/components/PageHeader';
 import { PasswordInput } from '../../src/components/PasswordInput';
 import { DateRangePicker } from '../../src/components/DateRangePicker';
@@ -119,10 +119,18 @@ export default function Signup() {
         setError('Informe a data de nascimento de cada filho preenchido.');
         return;
       }
+      if (!temIdadeMinima(paraISO(f.dataNascimento)!)) {
+        setError('Cada aluno precisa ter pelo menos 3 anos completos para ser matriculado.');
+        return;
+      }
     }
 
     if (titular === 'responsavel' && souTambemAluno && !paraISO(dataNascimentoPropria)) {
       setError('Informe sua data de nascimento.');
+      return;
+    }
+    if (titular === 'responsavel' && souTambemAluno && !temIdadeMinima(paraISO(dataNascimentoPropria)!)) {
+      setError('O aluno precisa ter pelo menos 3 anos completos para ser matriculado.');
       return;
     }
 
@@ -509,10 +517,11 @@ const styles = StyleSheet.create({
   },
   filhoCampos: {
     flex: 1,
+    minWidth: 0,
     gap: spacing.xs,
   },
   filhoInput: {
-    flex: 1,
+    width: '100%',
   },
   filhoRemover: {
     width: touchTarget,

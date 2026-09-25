@@ -13,14 +13,16 @@ import {
 } from 'react-native';
 
 import { convidarAluno, criarAluno, type Plano } from '../../../src/features/alunos/api';
-import { getModulosAtivos, type Modulo } from '../../../src/features/chamada/api';
+import { getGradeSemanal, getModulosAtivos, type AulaRecorrente, type Modulo } from '../../../src/features/chamada/api';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
+import { WebModal } from '../../../src/components/WebModal';
 import { Chip } from '../../../src/components/Chip';
+import { Dropdown } from '../../../src/components/Dropdown';
 import { DateRangePicker } from '../../../src/components/DateRangePicker';
-import { hojeBR, paraBR, paraISO } from '../../../src/lib/dataBR';
+import { hojeBR, paraBR, paraISO, temIdadeMinima } from '../../../src/lib/dataBR';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -40,16 +42,30 @@ function somaMeses(dataBR: string, meses: number): string {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 }
 
+function menorDeIdade(dataNascimentoISO: string): boolean {
+  const nascimento = new Date(`${dataNascimentoISO}T00:00:00`);
+  const hoje = new Date();
+  let idade = hoje.getFullYear() - nascimento.getFullYear();
+  const aindaNaoCompletou =
+    hoje.getMonth() < nascimento.getMonth() ||
+    (hoje.getMonth() === nascimento.getMonth() && hoje.getDate() < nascimento.getDate());
+  if (aindaNaoCompletou) idade -= 1;
+  return idade < 18;
+}
+
 export default function NovoAluno() {
   const router = useRouter();
   const { meuPapel } = useAuth();
 
   const { data: dadosModulos } = useAsyncData<Modulo[]>(getModulosAtivos, []);
+  const { data: dadosGrade } = useAsyncData<AulaRecorrente[]>(getGradeSemanal, []);
   const modulos = dadosModulos ?? [];
+  const grade = dadosGrade ?? [];
 
   const [nome, setNome] = useState('');
   const [dataNascimento, setDataNascimento] = useState('');
   const [modulo, setModulo] = useState<number | null>(null);
+  const [aulaRecorrenteId, setAulaRecorrenteId] = useState<string | null>(null);
 
   // Assim que os módulos carregam, seleciona o primeiro por padrão — sem
   // isso o formulário abriria sem nenhum módulo marcado.
@@ -75,6 +91,18 @@ export default function NovoAluno() {
   // quando o erro só aparece perto do botão "Salvar aluno", lá embaixo.
   const scrollRef = useRef<ScrollView>(null);
   const emailYRef = useRef(0);
+
+  const horariosDoModulo = grade.filter((slot) => modulo !== null && slot.modulos.includes(modulo));
+  const opcoesHorarios = horariosDoModulo.map((slot) => ({
+    value: slot.id,
+    label: `${['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'][slot.dia_semana]} · ${slot.hora.slice(0, 5)}`,
+  }));
+
+  useEffect(() => {
+    if (aulaRecorrenteId && !horariosDoModulo.some((slot) => slot.id === aulaRecorrenteId)) {
+      setAulaRecorrenteId(null);
+    }
+  }, [aulaRecorrenteId, horariosDoModulo]);
 
   function escolherPlano(novoPlano: Plano) {
     setPlano(novoPlano);
@@ -123,14 +151,35 @@ export default function NovoAluno() {
       return;
     }
 
+    if (!temIdadeMinima(nascimentoISO)) {
+      setError('O aluno precisa ter pelo menos 3 anos completos para ser matriculado.');
+      return;
+    }
+
+    const ehMenorDeIdade = menorDeIdade(nascimentoISO);
+    if (ehMenorDeIdade && !responsavelNome.trim()) {
+      setError('Informe o nome do responsável legal para alunos menores de idade.');
+      return;
+    }
+
     if (modulo === null) {
       setError('Escolha o módulo.');
       return;
     }
 
+    if (!aulaRecorrenteId) {
+      setError('Escolha o horário da grade para o aluno.');
+      return;
+    }
+
     const emailValido = !emailAcesso.trim() || EMAIL_REGEX.test(emailAcesso.trim());
+    if (ehMenorDeIdade && !emailAcesso.trim()) {
+      setError('Informe o email do responsável legal para enviar o convite de acesso.');
+      scrollRef.current?.scrollTo({ y: emailYRef.current, animated: true });
+      return;
+    }
     if (!emailValido) {
-      setError('Informe um email válido para dar acesso ao aplicativo, ou deixe em branco.');
+      setError('Informe um email válido para enviar o convite de acesso.');
       scrollRef.current?.scrollTo({ y: emailYRef.current, animated: true });
       return;
     }
@@ -142,6 +191,7 @@ export default function NovoAluno() {
           nome: nome.trim(),
           data_nascimento: nascimentoISO,
           modulo,
+          aula_recorrente_id: aulaRecorrenteId,
           responsavel_nome: responsavelNome.trim() || null,
           responsavel_telefone: responsavelTelefone.trim() || null,
           // Guardado mesmo quando o convite abaixo não é enviado agora: é
@@ -171,7 +221,7 @@ export default function NovoAluno() {
       else router.replace('/');
     } catch (err) {
       console.error(err);
-      setError('Erro ao salvar aluno. Tente novamente.');
+      setError(err instanceof Error ? err.message : 'Erro ao salvar aluno. Tente novamente.');
     } finally {
       setSubmitting(false);
     }
@@ -182,10 +232,11 @@ export default function NovoAluno() {
   }
 
   return (
-    <>
+    <WebModal>
     <PageHeader titulo="Novo aluno" />
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView ref={scrollRef} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <Text style={styles.secaoTitulo}>Dados do aluno</Text>
         <Text style={[type.label, styles.rotulo]}>Nome</Text>
         <TextInput style={styles.input} value={nome} onChangeText={setNome} placeholder="Nome completo" />
 
@@ -208,6 +259,7 @@ export default function NovoAluno() {
           />
         ) : null}
 
+        <Text style={styles.secaoTitulo}>Matrícula</Text>
         <Text style={[type.label, styles.rotulo]}>Módulo</Text>
         <View style={styles.chips}>
           {modulos.map((m) => (
@@ -215,7 +267,23 @@ export default function NovoAluno() {
           ))}
         </View>
 
-        <Text style={[type.label, styles.rotulo]}>Responsável (opcional)</Text>
+        <Text style={[type.label, styles.rotulo]}>Horário da grade</Text>
+        <Dropdown
+          testID="novo-aluno-dropdown-horario"
+          placeholder="Selecione o horário do aluno"
+          options={opcoesHorarios}
+          value={aulaRecorrenteId}
+          onChange={setAulaRecorrenteId}
+          vazio={modulo === null ? 'Escolha o módulo primeiro.' : 'Nenhum horário para este módulo.'}
+        />
+
+        <Text style={styles.secaoTitulo}>Responsável e acesso</Text>
+        <Text style={[type.caption, styles.secaoAjuda]}>
+          Para menores de idade, o responsável legal e o email para convite são obrigatórios. Para maiores, o acesso é opcional.
+        </Text>
+        <Text style={[type.label, styles.rotulo]}>
+          Responsável {dataNascimento && menorDeIdade(paraISO(dataNascimento) ?? '') ? '(obrigatório)' : '(opcional)'}
+        </Text>
         <TextInput
           style={styles.input}
           value={responsavelNome}
@@ -231,7 +299,11 @@ export default function NovoAluno() {
         />
 
         <View onLayout={(e) => { emailYRef.current = e.nativeEvent.layout.y; }}>
-          <Text style={[type.label, styles.rotulo]}>Email do responsável (opcional)</Text>
+          <Text style={[type.label, styles.rotulo]}>
+            {dataNascimento && menorDeIdade(paraISO(dataNascimento) ?? '')
+              ? 'Email do responsável (obrigatório)'
+              : 'Email de acesso (opcional)'}
+          </Text>
           <TextInput
             style={styles.input}
             value={emailAcesso}
@@ -242,12 +314,13 @@ export default function NovoAluno() {
             keyboardType="email-address"
           />
           <Text style={[type.caption, styles.dicaEmail]}>
-            Preenchendo, o aluno (ou responsável) já recebe um convite por email pra criar a própria senha agora. Se
-            ele preferir se cadastrar sozinho depois, o app vincula a conta automaticamente por esse mesmo email — sem
-            precisar de convite nem de vínculo manual.
+            {dataNascimento && menorDeIdade(paraISO(dataNascimento) ?? '')
+              ? 'Obrigatório para alunos menores de idade: o responsável receberá o convite para acessar o app.'
+              : 'Preenchendo, o aluno ou responsável recebe um convite por email para criar a própria senha.'}
           </Text>
         </View>
 
+        <Text style={styles.secaoTitulo}>Contrato</Text>
         <Text style={[type.label, styles.rotulo]}>Plano</Text>
         <View style={styles.chips}>
           {PLANOS.map((p) => (
@@ -306,7 +379,7 @@ export default function NovoAluno() {
       </ScrollView>
     </KeyboardAvoidingView>
     <Footer />
-    </>
+    </WebModal>
   );
 }
 
@@ -324,6 +397,17 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: spacing.lg,
     marginBottom: spacing.xs,
+  },
+  secaoTitulo: {
+    color: colors.text,
+    fontFamily: type.subtitle.fontFamily,
+    fontSize: type.subtitle.fontSize,
+    marginTop: spacing.xl,
+    marginBottom: spacing.xs,
+  },
+  secaoAjuda: {
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
   },
   input: {
     height: touchTarget,

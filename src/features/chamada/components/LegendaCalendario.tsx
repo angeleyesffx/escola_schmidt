@@ -6,23 +6,34 @@ import { estilosCalendario } from './estiloCalendario';
 
 type Props = {
   tiposEvento: TipoEvento[];
+  mostrarAula: boolean;
+  mostrarParticular: boolean;
+  mostrarTeste: boolean;
 };
 
-export function LegendaCalendario({ tiposEvento }: Props) {
+export function LegendaCalendario({ tiposEvento, mostrarAula, mostrarParticular, mostrarTeste }: Props) {
+  if (!mostrarAula && !mostrarParticular && !mostrarTeste && tiposEvento.length === 0) return null;
+
   return (
     <View style={styles.legendaEventos}>
-      <View style={styles.legendaEventoItem}>
-        <View style={[styles.legendaEventoDot, styles.legendaAulaDot]} />
-        <Text style={[type.caption, styles.legendaPontoTexto]}>Dia com aula na grade</Text>
-      </View>
-      <View style={styles.legendaEventoItem}>
-        <View style={[styles.legendaEventoDot, estilosCalendario.diaParticularDot]} />
-        <Text style={[type.caption, styles.legendaPontoTexto]}>Aula particular agendada</Text>
-      </View>
-      <View style={styles.legendaEventoItem}>
-        <View style={[styles.legendaEventoDot, estilosCalendario.diaTesteDot]} />
-        <Text style={[type.caption, styles.legendaPontoTexto]}>Aula teste agendada</Text>
-      </View>
+      {mostrarAula ? (
+        <View style={styles.legendaEventoItem}>
+          <View style={[styles.legendaEventoDot, styles.legendaAulaDot]} />
+          <Text style={[type.caption, styles.legendaPontoTexto]}>Dia com aula na grade</Text>
+        </View>
+      ) : null}
+      {mostrarParticular ? (
+        <View style={styles.legendaEventoItem}>
+          <View style={[styles.legendaEventoDot, estilosCalendario.diaParticularDot]} />
+          <Text style={[type.caption, styles.legendaPontoTexto]}>Aula particular agendada</Text>
+        </View>
+      ) : null}
+      {mostrarTeste ? (
+        <View style={styles.legendaEventoItem}>
+          <View style={[styles.legendaEventoDot, estilosCalendario.diaTesteDot]} />
+          <Text style={[type.caption, styles.legendaPontoTexto]}>Aula teste agendada</Text>
+        </View>
+      ) : null}
       {tiposEvento.map((tipoEvento) => (
         <View key={tipoEvento.id} style={styles.legendaEventoItem}>
           <View style={[styles.legendaEventoDot, { backgroundColor: tipoEvento.cor }]} />

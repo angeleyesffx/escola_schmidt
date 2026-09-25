@@ -1,6 +1,16 @@
 import { Redirect } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  type GestureResponderEvent,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import {
   atualizarTipoEvento,
@@ -15,6 +25,7 @@ import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { confirmDelete, confirmSave } from '../../../src/lib/confirmar';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
+import { WebModal } from '../../../src/components/WebModal';
 import { FormModal } from '../../../src/components/FormModal';
 import { RowActions } from '../../../src/components/RowActions';
 import { ToggleAtivo } from '../../../src/components/ToggleAtivo';
@@ -33,6 +44,40 @@ const CORES_PRESET = [
   '#1BA97B', '#D99A2B', '#6B7280', '#EC4899',
 ];
 
+// Matiz do arco-íris pro slider de cor personalizada — saturação/luminosidade
+// fixas (70%/50%) pra garantir contraste legível em qualquer ponto do slider.
+const CORES_ARCO_IRIS = ['#FF0000', '#FFFF00', '#00FF00', '#00FFFF', '#0000FF', '#FF00FF', '#FF0000'] as const;
+
+function hslParaHex(matiz: number, saturacao: number, luminosidade: number): string {
+  const s = saturacao / 100;
+  const l = luminosidade / 100;
+  const k = (n: number) => (n + matiz / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const paraHex = (n: number) =>
+    Math.round(f(n) * 255)
+      .toString(16)
+      .padStart(2, '0');
+  return `#${paraHex(0)}${paraHex(8)}${paraHex(4)}`;
+}
+
+function hexParaMatiz(hex: string): number {
+  const valor = hex.replace('#', '');
+  const bytes =
+    valor.length === 3 ? valor.split('').map((c) => c + c) : [valor.slice(0, 2), valor.slice(2, 4), valor.slice(4, 6)];
+  const [r, g, b] = bytes.map((par) => parseInt(par, 16) / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  if (delta === 0) return 0;
+  let matiz = 0;
+  if (max === r) matiz = ((g - b) / delta) % 6;
+  else if (max === g) matiz = (b - r) / delta + 2;
+  else matiz = (r - g) / delta + 4;
+  matiz *= 60;
+  return matiz < 0 ? matiz + 360 : matiz;
+}
+
 export default function TiposEventoAdminScreen() {
   const { meuPapel } = useAuth();
   const souEquipe = meuPapel === 'dono' || meuPapel === 'professor';
@@ -43,6 +88,10 @@ export default function TiposEventoAdminScreen() {
   const [editando, setEditando] = useState<TipoEventoAdmin | null>(null);
   const [nomeForm, setNomeForm] = useState('');
   const [corForm, setCorForm] = useState(CORES_PRESET[0]);
+  // Matiz do slider de cor personalizada (0-360) — só usado quando a pessoa
+  // arrasta o dedo no gradiente; presets continuam sendo um toque só.
+  const [matizPersonalizado, setMatizPersonalizado] = useState(0);
+  const [larguraSlider, setLarguraSlider] = useState(0);
 
   const { data: tipos, loading, reload: recarregar } = useAsyncData<TipoEventoAdmin[]>(getTiposEventoAdmin, [], {
     mensagemErro: 'Erro ao carregar tipos de evento. Tente novamente.',
@@ -56,6 +105,7 @@ export default function TiposEventoAdminScreen() {
     setEditando(null);
     setNomeForm('');
     setCorForm(CORES_PRESET[0]);
+    setMatizPersonalizado(0);
     setErro(null);
     setModalAberto(true);
   }
@@ -64,6 +114,9 @@ export default function TiposEventoAdminScreen() {
     setEditando(tipo);
     setNomeForm(tipo.nome);
     setCorForm(tipo.cor);
+    // Cor já cadastrada pode não estar nos presets (import antigo, ajuste manual
+    // no banco) — posiciona o slider pelo matiz aproximado dessa cor.
+    setMatizPersonalizado(CORES_PRESET.includes(tipo.cor) ? 0 : hexParaMatiz(tipo.cor));
     setErro(null);
     setModalAberto(true);
   }
@@ -71,6 +124,14 @@ export default function TiposEventoAdminScreen() {
   function fecharModal() {
     if (salvando) return;
     setModalAberto(false);
+  }
+
+  function escolherMatizPeloToque(evento: GestureResponderEvent) {
+    if (!larguraSlider) return;
+    const x = Math.max(0, Math.min(evento.nativeEvent.locationX, larguraSlider));
+    const matiz = (x / larguraSlider) * 360;
+    setMatizPersonalizado(matiz);
+    setCorForm(hslParaHex(matiz, 70, 50));
   }
 
   function confirmarSalvar() {
@@ -149,7 +210,7 @@ export default function TiposEventoAdminScreen() {
   }
 
   return (
-    <>
+    <WebModal>
       <PageHeader titulo="Tipos de evento" />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
         <View style={styles.topoRow}>
@@ -165,18 +226,22 @@ export default function TiposEventoAdminScreen() {
 
         {(tipos ?? []).map((tipo) => (
           <View key={tipo.id} style={styles.itemRow}>
-            <View style={[styles.corDot, { backgroundColor: tipo.cor }]} />
-            <Text style={[type.body, styles.itemTextoWrap, !tipo.ativo && styles.inativo]}>{tipo.nome}</Text>
-            <ToggleAtivo
-              testID={`tipo-evento-${tipo.id}-toggle`}
-              ativo={tipo.ativo}
-              onToggle={() => alternarAtivo(tipo)}
-            />
-            <RowActions
-              testIdBase={`tipo-evento-${tipo.id}`}
-              onEdit={() => abrirEdicao(tipo)}
-              onDelete={() => excluir(tipo)}
-            />
+            <View style={styles.itemTopo}>
+              <View style={[styles.corDot, { backgroundColor: tipo.cor }]} />
+              <Text style={[type.body, styles.itemTextoWrap, !tipo.ativo && styles.inativo]}>{tipo.nome}</Text>
+            </View>
+            <View style={styles.itemAcoes}>
+              <ToggleAtivo
+                testID={`tipo-evento-${tipo.id}-toggle`}
+                ativo={tipo.ativo}
+                onToggle={() => alternarAtivo(tipo)}
+              />
+              <RowActions
+                testIdBase={`tipo-evento-${tipo.id}`}
+                onEdit={() => abrirEdicao(tipo)}
+                onDelete={() => excluir(tipo)}
+              />
+            </View>
           </View>
         ))}
       </ScrollView>
@@ -207,6 +272,35 @@ export default function TiposEventoAdminScreen() {
           ))}
         </View>
 
+        <Text style={[type.label, styles.campoRotulo]}>Ou escolha uma cor personalizada</Text>
+        <View style={styles.corPersonalizadaRow}>
+          <View style={[styles.corOpcao, styles.corPersonalizadaPreview, { backgroundColor: corForm }]} />
+          <View
+            testID="tipo-evento-cor-slider"
+            style={styles.corSlider}
+            onLayout={(e) => setLarguraSlider(e.nativeEvent.layout.width)}
+            onStartShouldSetResponder={() => true}
+            onMoveShouldSetResponder={() => true}
+            onResponderGrant={escolherMatizPeloToque}
+            onResponderMove={escolherMatizPeloToque}
+          >
+            <LinearGradient
+              colors={CORES_ARCO_IRIS}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.corSliderGradiente}
+            />
+            <View
+              pointerEvents="none"
+              style={[
+                styles.corSliderMarcador,
+                { left: larguraSlider ? (matizPersonalizado / 360) * larguraSlider - 10 : 0 },
+              ]}
+            />
+          </View>
+        </View>
+        <Text style={[type.caption, styles.corSliderDica]}>Arraste o dedo pela faixa colorida acima.</Text>
+
         <TouchableOpacity
           testID="tipo-evento-salvar"
           style={[styles.botao, salvando && styles.botaoDesabilitado]}
@@ -222,7 +316,7 @@ export default function TiposEventoAdminScreen() {
       </FormModal>
 
       <Footer />
-    </>
+    </WebModal>
   );
 }
 
@@ -271,16 +365,19 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   itemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: spacing.sm,
-    minHeight: touchTarget,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     marginBottom: spacing.sm,
+  },
+  itemTopo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   corDot: {
     width: 12,
@@ -289,6 +386,13 @@ const styles = StyleSheet.create({
   },
   itemTextoWrap: {
     flex: 1,
+  },
+  itemAcoes: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
   },
   inativo: {
     color: colors.textMuted,
@@ -324,6 +428,42 @@ const styles = StyleSheet.create({
   },
   corOpcaoAtiva: {
     borderColor: colors.text,
+  },
+  corPersonalizadaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  corPersonalizadaPreview: {
+    borderColor: colors.border,
+  },
+  corSlider: {
+    flex: 1,
+    height: 40,
+    borderRadius: radius.pill,
+    overflow: 'visible',
+    justifyContent: 'center',
+  },
+  corSliderGradiente: {
+    height: 40,
+    borderRadius: radius.pill,
+  },
+  corSliderMarcador: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    borderRadius: radius.pill,
+    borderWidth: 3,
+    borderColor: colors.surface,
+    backgroundColor: colors.text,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+  },
+  corSliderDica: {
+    color: colors.textMuted,
+    marginTop: spacing.xs,
   },
   botao: {
     height: touchTarget,

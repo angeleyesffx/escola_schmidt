@@ -27,12 +27,13 @@ import {
   agruparAulasPorDiaSemana,
   filtrarAulasDoProfessor,
   filtrarEventosNoDia,
+  filtrarModulosDaAgenda,
   filtrarParticularesNoDia,
   filtrarTestesNoDia,
   montarCorPorTipo,
   montarMeusSlots,
 } from '../../../src/features/chamada/selectors';
-import { getEventosPorPeriodo, getTiposEvento } from '../../../src/features/eventos/api';
+import { excluirEvento, getEventosPorPeriodo, getTiposEvento } from '../../../src/features/eventos/api';
 import { AcoesAgendamento } from '../../../src/features/chamada/components/AcoesAgendamento';
 import { BannerAgenda } from '../../../src/features/chamada/components/BannerAgenda';
 import { CalendarioMes } from '../../../src/features/chamada/components/CalendarioMes';
@@ -46,14 +47,14 @@ import { PeriodoNav } from '../../../src/features/chamada/components/PeriodoNav'
 import { PickerMesInline } from '../../../src/features/chamada/components/PickerMesInline';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
-import { confirmar } from '../../../src/lib/confirmar';
+import { confirmar, confirmDelete } from '../../../src/lib/confirmar';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
 
 export default function ChamadaIndex() {
   const router = useRouter();
-  const { meuPapel, session } = useAuth();
+  const { meuPapel, session, meusAlunos } = useAuth();
   const podeEditar = meuPapel === 'dono' || meuPapel === 'professor';
   const souProfessor = meuPapel === 'professor';
   const souAluno = (meuPapel === 'aluno' || meuPapel === 'responsavel');
@@ -64,7 +65,6 @@ export default function ChamadaIndex() {
   const [modo, setModo] = useState<ModoCalendario>('semana');
   const [dataSelecionada, setDataSelecionada] = useState(paraDataSemHorario(new Date()));
   const [pickerAberto, setPickerAberto] = useState(false);
-  const [pickerData, setPickerData] = useState(dataSelecionada);
   const [filtroEventosDataISO, setFiltroEventosDataISO] = useState<string | null>(null);
 
   const dataISO = useMemo(() => formatDataISO(dataSelecionada), [dataSelecionada]);
@@ -72,8 +72,6 @@ export default function ChamadaIndex() {
   const gradeMes = useMemo(() => getGradeMes(dataSelecionada), [dataSelecionada]);
   const mesAtual = dataSelecionada.getMonth();
 
-  const pickerGrade = useMemo(() => getGradeMes(pickerData), [pickerData]);
-  const pickerMesAtual = pickerData.getMonth();
 
   const inicioVisivel = modo === 'semana' ? diasSemana[0].iso : gradeMes[0].iso;
   const fimVisivel = modo === 'semana' ? diasSemana[6].iso : gradeMes[gradeMes.length - 1].iso;
@@ -88,7 +86,7 @@ export default function ChamadaIndex() {
   const { data: dadosTiposEvento } = useAsyncData(getTiposEvento, []);
   const tiposEvento = dadosTiposEvento ?? [];
 
-  const { data: dadosEventos } = useAsyncData(
+  const { data: dadosEventos, setData: setEventos } = useAsyncData(
     () => getEventosPorPeriodo(inicioVisivel, fimVisivel),
     [inicioVisivel, fimVisivel]
   );
@@ -146,10 +144,8 @@ export default function ChamadaIndex() {
   const confirmarExclusaoTeste = useCallback(
     (aula: AulaTeste) => {
       const nomes = aula.candidatos.map((c) => c.nome).join(', ') || 'sem candidatos';
-      confirmar(
-        'Cancelar aula teste',
-        `Cancelar a aula teste de ${nomes} em ${aula.data.split('-').reverse().join('/')} às ${formatHora(aula.hora)}?`,
-        'Cancelar aula',
+      confirmDelete(
+        `aula teste de ${nomes}`,
         () => {
           excluirAulaTeste(aula.id)
             .then(() => setAulasTeste((atual) => (atual ?? []).filter((t) => t.id !== aula.id)))
@@ -158,6 +154,32 @@ export default function ChamadaIndex() {
       );
     },
     [setAulasTeste]
+  );
+
+  const confirmarExclusaoEvento = useCallback(
+    (evento: (typeof eventos)[number]) => {
+      confirmDelete(evento.titulo, () => {
+        excluirEvento(evento.id)
+          .then(() => setEventos((atual) => (atual ?? []).filter((item) => item.id !== evento.id)))
+          .catch((err) => console.error(err));
+      });
+    },
+    [setEventos]
+  );
+
+  // Legenda só mostra o que existe de fato no período visível (semana ou
+  // mês) — antes listava sempre os 10 tipos possíveis, a maioria irrelevante
+  // pra maior parte dos meses (achado de revisão de UX, 2026-09-22).
+  const diasVisiveis = modo === 'semana' ? diasSemana : gradeMes;
+  const mostrarAula = useMemo(
+    () => diasVisiveis.some((dia) => aulasPorDiaSemana.has(dia.diaSemana)),
+    [diasVisiveis, aulasPorDiaSemana]
+  );
+  const mostrarParticular = particulares.length > 0;
+  const mostrarTeste = aulasTeste.length > 0;
+  const tiposEventoVisiveis = useMemo(
+    () => tiposEvento.filter((tipo) => eventos.some((evento) => evento.tipo_id === tipo.id)),
+    [tiposEvento, eventos]
   );
 
   const {
@@ -178,8 +200,14 @@ export default function ChamadaIndex() {
   );
   const meusSlots = useMemo(() => montarMeusSlots(responsabilidades ?? []), [responsabilidades]);
   const aulas = useMemo(
-    () => filtrarAulasDoProfessor(dadosAulas ?? [], souProfessor, meusSlots),
-    [dadosAulas, souProfessor, meusSlots]
+    () => {
+      const aulasDoProfessor = filtrarAulasDoProfessor(dadosAulas ?? [], souProfessor, meusSlots);
+      const modulosAtivosAluno = new Set(
+        meusAlunos.filter((aluno) => aluno.ativo !== false).map((aluno) => aluno.modulo)
+      );
+      return filtrarModulosDaAgenda(aulasDoProfessor, meuPapel, modulosAtivosAluno, responsabilidades ?? []);
+    },
+    [dadosAulas, souProfessor, meusSlots, meuPapel, meusAlunos, responsabilidades]
   );
 
   const navegarPeriodo = useCallback(
@@ -198,13 +226,8 @@ export default function ChamadaIndex() {
       setPickerAberto(false);
       return;
     }
-    setPickerData(dataSelecionada);
     setPickerAberto(true);
-  }, [pickerAberto, dataSelecionada]);
-
-  const navegarPickerMes = useCallback((direcao: -1 | 1) => {
-    setPickerData((anterior) => new Date(anterior.getFullYear(), anterior.getMonth() + direcao, 1));
-  }, []);
+  }, [pickerAberto]);
 
   const selecionarDataPicker = useCallback((data: Date) => {
     const dataNormalizada = paraDataSemHorario(data);
@@ -228,14 +251,15 @@ export default function ChamadaIndex() {
     <View>
       <BannerAgenda />
 
-      <AcoesAgendamento
-        podeEditar={podeEditar}
-        souAluno={souAluno}
-        onAgendarAula={() => router.push('/chamada/agendar')}
-        onAgendarParticular={() => router.push('/chamada/nova-particular')}
-      />
-
-      <ModoToggle modo={modo} onSelecionarModo={setModo} />
+      <View style={styles.controlesAgenda}>
+        <ModoToggle modo={modo} onSelecionarModo={setModo} />
+        <AcoesAgendamento
+          podeEditar={podeEditar}
+          souAluno={souAluno}
+          onAgendarAula={() => router.push('/chamada/agendar')}
+          onAgendarParticular={() => router.push('/chamada/nova-particular')}
+        />
+      </View>
 
       <PeriodoNav
         modo={modo}
@@ -247,11 +271,7 @@ export default function ChamadaIndex() {
 
       {pickerAberto ? (
         <PickerMesInline
-          pickerData={pickerData}
-          pickerGrade={pickerGrade}
-          pickerMesAtual={pickerMesAtual}
           dataISO={dataISO}
-          onNavegarMes={navegarPickerMes}
           onSelecionarData={selecionarDataPicker}
           onFechar={() => setPickerAberto(false)}
         />
@@ -288,7 +308,12 @@ export default function ChamadaIndex() {
         />
       )}
 
-      <LegendaCalendario tiposEvento={tiposEvento} />
+      <LegendaCalendario
+        tiposEvento={tiposEventoVisiveis}
+        mostrarAula={mostrarAula}
+        mostrarParticular={mostrarParticular}
+        mostrarTeste={mostrarTeste}
+      />
 
       <ListaParticulares
         particulares={particularesFiltradas}
@@ -302,14 +327,18 @@ export default function ChamadaIndex() {
         aulasTeste={testesFiltrados}
         filtroAtivo={Boolean(filtroEventosDataISO)}
         podeEditar={podeEditar}
+        onAbrirTeste={(aula) => router.push(`/chamada/nova-teste?id=${aula.id}`)}
         onExcluirTeste={confirmarExclusaoTeste}
       />
 
       <ListaEventos
         eventos={eventosFiltrados}
         filtroAtivo={Boolean(filtroEventosDataISO)}
+        podeEditar={podeEditar}
         corPorTipo={corPorTipo}
         onAbrirEvento={(e) => router.push(`/eventos/${e.id}`)}
+        onEditarEvento={(e) => router.push(`/chamada/novo-evento?id=${e.id}`)}
+        onExcluirEvento={confirmarExclusaoEvento}
         onLimparFiltro={() => setFiltroEventosDataISO(null)}
       />
 
@@ -369,6 +398,14 @@ const styles = StyleSheet.create({
   error: {
     color: colors.danger,
     marginTop: spacing.sm,
+  },
+  controlesAgenda: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+    marginTop: spacing.md,
   },
   list: {
     paddingHorizontal: spacing.lg,

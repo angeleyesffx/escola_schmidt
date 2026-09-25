@@ -14,10 +14,11 @@ import {
 
 import { getAlunos } from '../../../src/features/alunos/api';
 import { criarAulaParticular, getHorariosLivresProfessor, getProfessores } from '../../../src/features/chamada/api';
-import { formatDataISO } from '../../../src/features/chamada/calendar';
+import { dataISOAntesDeHoje, formatDataISO } from '../../../src/features/chamada/calendar';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { PageHeader } from '../../../src/components/PageHeader';
+import { WebModal } from '../../../src/components/WebModal';
 import { DateRangePicker } from '../../../src/components/DateRangePicker';
 import { Footer } from '../../../src/components/Footer';
 import { Chip } from '../../../src/components/Chip';
@@ -137,6 +138,10 @@ export default function NovaAulaParticular() {
       setErroSalvar('Escolha um horário livre do professor.');
       return;
     }
+    if (dataISOAntesDeHoje(dataISO)) {
+      setErroSalvar('Não é possível agendar uma aula particular em uma data retroativa.');
+      return;
+    }
 
     setSalvando(true);
     try {
@@ -167,7 +172,7 @@ export default function NovaAulaParticular() {
 
   if (souAluno && meusAlunos.length === 0) {
     return (
-      <>
+      <WebModal>
         <PageHeader titulo="Aula particular" />
         <View style={styles.center}>
           <Text style={[type.body, styles.subtitle]}>
@@ -175,23 +180,23 @@ export default function NovaAulaParticular() {
           </Text>
         </View>
         <Footer />
-      </>
+      </WebModal>
     );
   }
 
   if (loading) {
     return (
-      <>
+      <WebModal>
         <PageHeader titulo="Aula particular" />
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
         </View>
-      </>
+      </WebModal>
     );
   }
 
   return (
-    <>
+    <WebModal>
       <PageHeader titulo="Aula particular" />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
@@ -291,7 +296,7 @@ export default function NovaAulaParticular() {
         </ScrollView>
       </KeyboardAvoidingView>
       <Footer />
-    </>
+    </WebModal>
   );
 }
 

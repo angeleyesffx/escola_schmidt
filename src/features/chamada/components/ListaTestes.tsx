@@ -1,19 +1,20 @@
-import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import type { AulaTeste } from '../api';
 import { formatHora, formatModulos } from '../calendar';
 import { colors, radius, spacing, touchTarget, type } from '../../../constants/theme';
+import { uiAssets } from '../../../constants/uiAssets';
 import { estilosCalendario } from './estiloCalendario';
 
 type Props = {
   aulasTeste: AulaTeste[];
   filtroAtivo: boolean;
   podeEditar: boolean;
+  onAbrirTeste: (aula: AulaTeste) => void;
   onExcluirTeste: (aula: AulaTeste) => void;
 };
 
-export function ListaTestes({ aulasTeste, filtroAtivo, podeEditar, onExcluirTeste }: Props) {
+export function ListaTestes({ aulasTeste, filtroAtivo, podeEditar, onAbrirTeste, onExcluirTeste }: Props) {
   if (aulasTeste.length === 0) return null;
 
   return (
@@ -25,7 +26,13 @@ export function ListaTestes({ aulasTeste, filtroAtivo, podeEditar, onExcluirTest
       </View>
       {aulasTeste.map((t) => (
         <View key={t.id} testID={`chamada-index-teste-item-${t.id}`} style={styles.eventoItem}>
-          <View style={styles.eventoItemPrincipal}>
+          <TouchableOpacity
+            testID={`chamada-index-teste-abrir-${t.id}`}
+            style={styles.eventoItemPrincipal}
+            onPress={() => onAbrirTeste(t)}
+            accessibilityRole="button"
+            accessibilityLabel={`Detalhes da aula teste de ${t.candidatos.map((c) => c.nome).join(', ') || 'sem candidatos'}`}
+          >
             <View style={[styles.eventoItemCor, estilosCalendario.diaTesteDot]} />
             <View style={styles.eventoItemTexto}>
               <Text style={type.body}>{t.candidatos.map((c) => c.nome).join(', ') || 'Sem candidatos'}</Text>
@@ -33,18 +40,32 @@ export function ListaTestes({ aulasTeste, filtroAtivo, podeEditar, onExcluirTest
                 {t.data.split('-').reverse().join('/')} às {formatHora(t.hora)} · {formatModulos(t.modulos)}
               </Text>
             </View>
-          </View>
+          </TouchableOpacity>
           {podeEditar ? (
-            <TouchableOpacity
-              testID={`chamada-index-teste-excluir-${t.id}`}
-              style={styles.eventoItemExcluir}
-              onPress={() => onExcluirTeste(t)}
-              accessibilityRole="button"
-              accessibilityLabel="Cancelar aula teste"
-              hitSlop={8}
-            >
-              <Ionicons name="trash-outline" size={20} color={colors.danger} />
-            </TouchableOpacity>
+            <View style={styles.acoes}>
+              <TouchableOpacity
+                testID={`chamada-index-teste-editar-${t.id}`}
+                style={styles.eventoItemAcao}
+                onPress={() => onAbrirTeste(t)}
+                accessibilityRole="button"
+                accessibilityLabel={`Editar aula teste de ${t.candidatos.map((c) => c.nome).join(', ') || 'sem candidatos'}`}
+                hitSlop={8}
+              >
+                <Image source={uiAssets.icon.edit} style={styles.iconeAcao} />
+                <Text style={[type.label, styles.textoEditar]}>Editar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID={`chamada-index-teste-excluir-${t.id}`}
+                style={styles.eventoItemAcao}
+                onPress={() => onExcluirTeste(t)}
+                accessibilityRole="button"
+                accessibilityLabel={`Excluir aula teste de ${t.candidatos.map((c) => c.nome).join(', ') || 'sem candidatos'}`}
+                hitSlop={8}
+              >
+                <Image source={uiAssets.icon.trash} style={styles.iconeAcao} />
+                <Text style={[type.label, styles.textoExcluir]}>Excluir</Text>
+              </TouchableOpacity>
+            </View>
           ) : null}
         </View>
       ))}
@@ -87,11 +108,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  eventoItemExcluir: {
-    width: touchTarget - 16,
-    height: touchTarget - 16,
+  acoes: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  eventoItemAcao: {
+    minHeight: touchTarget,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  iconeAcao: {
+    width: 40,
+    height: 40,
+    resizeMode: 'contain',
+  },
+  textoExcluir: {
+    color: colors.danger,
+  },
+  textoEditar: {
+    color: colors.primary,
   },
   eventoItemCor: {
     width: 8,

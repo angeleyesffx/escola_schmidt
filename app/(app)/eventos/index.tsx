@@ -5,12 +5,14 @@ import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TouchableOpacity,
 
 import { formatDataExtenso, formatDataISO, formatMesAno } from '../../../src/features/chamada/calendar';
 import { getEventosPorPeriodo, getTiposEvento } from '../../../src/features/eventos/api';
-import { ConfiguracaoFeriadosError, importarFeriados } from '../../../src/features/eventos/feriados';
+import { importarFeriados } from '../../../src/features/eventos/feriados';
+import { LegendaCalendario } from '../../../src/features/chamada/components/LegendaCalendario';
 import { useAuth } from '../../../src/features/auth/AuthProvider';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
 import { Dropdown } from '../../../src/components/Dropdown';
+import { PickerMesInline } from '../../../src/features/chamada/components/PickerMesInline';
 import { uiAssets } from '../../../src/constants/uiAssets';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
 
@@ -34,6 +36,7 @@ export default function EventosIndex() {
   const podeEditar = meuPapel === 'dono' || meuPapel === 'professor';
 
   const [mesReferencia, setMesReferencia] = useState(() => new Date());
+  const [pickerAberto, setPickerAberto] = useState(false);
   const [importarAberto, setImportarAberto] = useState(false);
   const [ufImportar, setUfImportar] = useState<string | null>(null);
   const [importando, setImportando] = useState(false);
@@ -59,6 +62,11 @@ export default function EventosIndex() {
   });
 
   const corPorTipo = new Map((tiposEvento ?? []).map((t) => [t.id, t.cor]));
+  // Só os tipos com pelo menos 1 evento no mês visto — antes listava todos os
+  // tipos cadastrados, a maioria irrelevante pra maior parte dos meses.
+  const tiposEventoVisiveis = (tiposEvento ?? []).filter((tipo) =>
+    (eventos ?? []).some((evento) => evento.tipo_id === tipo.id)
+  );
 
   function navegarMes(direcao: -1 | 1) {
     setMesReferencia((atual) => new Date(atual.getFullYear(), atual.getMonth() + direcao, 1));
@@ -82,11 +90,7 @@ export default function EventosIndex() {
       await Promise.all([recarregarEventos(), recarregarTipos()]);
     } catch (err) {
       console.error(err);
-      setErroImportacao(
-        err instanceof ConfiguracaoFeriadosError
-          ? err.message
-          : 'Erro ao importar feriados. Tente novamente.'
-      );
+      setErroImportacao('Erro ao importar feriados. Tente novamente.');
     } finally {
       setImportando(false);
     }
@@ -116,7 +120,9 @@ export default function EventosIndex() {
             <Text style={styles.importarBotaoTexto}>Importar feriados de {anoReferencia}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.eventoBotao} onPress={() => router.push('/chamada/novo-evento')}>
-            <Text style={styles.eventoBotaoTexto}>+ Evento</Text>
+            <Text style={styles.eventoBotaoTexto}>
+              <Text style={styles.plusPrefix}>+</Text> Evento
+            </Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -155,29 +161,44 @@ export default function EventosIndex() {
           accessibilityRole="button"
           accessibilityLabel="Mês anterior"
         >
-          <Ionicons name="chevron-back" size={22} color={colors.onPrimary} />
+          <Ionicons name="chevron-back" size={18} color={colors.onPrimary} />
         </TouchableOpacity>
-        <Text style={[type.title, styles.periodoTitulo]}>{formatMesAno(mesReferencia)}</Text>
+        <TouchableOpacity
+          testID="eventos-periodo-abrir-picker"
+          style={styles.periodoTituloBotao}
+          onPress={() => setPickerAberto(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Escolher data dos eventos"
+        >
+          <Text style={[type.title, styles.periodoTitulo]}>{formatMesAno(mesReferencia)}</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.navegarBotao}
           onPress={() => navegarMes(1)}
           accessibilityRole="button"
           accessibilityLabel="Próximo mês"
         >
-          <Ionicons name="chevron-forward" size={22} color={colors.onPrimary} />
+          <Ionicons name="chevron-forward" size={18} color={colors.onPrimary} />
         </TouchableOpacity>
       </View>
 
-      {tiposEvento && tiposEvento.length > 0 ? (
-        <View style={styles.legendaEventos}>
-          {tiposEvento.map((tipoEvento) => (
-            <View key={tipoEvento.id} style={styles.legendaEventoItem}>
-              <View style={[styles.legendaEventoDot, { backgroundColor: tipoEvento.cor }]} />
-              <Text style={[type.caption, styles.legendaPontoTexto]}>{tipoEvento.nome}</Text>
-            </View>
-          ))}
-        </View>
+      {pickerAberto ? (
+        <PickerMesInline
+          dataISO={formatDataISO(mesReferencia)}
+          onSelecionarData={(data) => {
+            setMesReferencia(primeiroDiaDoMes(data));
+            setPickerAberto(false);
+          }}
+          onFechar={() => setPickerAberto(false)}
+        />
       ) : null}
+
+      <LegendaCalendario
+        tiposEvento={tiposEventoVisiveis}
+        mostrarAula={false}
+        mostrarParticular={false}
+        mostrarTeste={false}
+      />
 
       {error ? <Text style={[type.body, styles.error]}>{error}</Text> : null}
     </View>
@@ -288,6 +309,9 @@ const styles = StyleSheet.create({
     fontFamily: type.subtitle.fontFamily,
     fontSize: type.subtitle.fontSize,
   },
+  plusPrefix: {
+    fontWeight: '700',
+  },
   importarBotao: {
     height: touchTarget,
     paddingHorizontal: spacing.lg,
@@ -338,34 +362,22 @@ const styles = StyleSheet.create({
   periodoTitulo: {
     textTransform: 'capitalize',
   },
-  // Mesmo padrão do botão de voltar do cabeçalho: círculo preenchido e cor
-  // sólida, não contorno fino — pra quem tem baixa visão enxergar de longe.
+  periodoTituloBotao: {
+    minHeight: touchTarget - 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+  },
+  // Mesmo padrão das setas da Agenda: touchTarget cheio ficava
+  // desproporcional ao lado do título do mês (achado de revisão de UX,
+  // 2026-09-22).
   navegarBotao: {
-    width: touchTarget,
-    height: touchTarget,
+    width: touchTarget - 12,
+    height: touchTarget - 12,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary,
-  },
-  legendaEventos: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  legendaEventoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  legendaEventoDot: {
-    width: 8,
-    height: 8,
-    borderRadius: radius.pill,
-  },
-  legendaPontoTexto: {
-    color: colors.textMuted,
   },
   error: {
     color: colors.danger,

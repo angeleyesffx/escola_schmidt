@@ -1,24 +1,16 @@
-import { useState } from 'react';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
-import { excluirEvento, getEvento, getTiposEvento } from '../../../src/features/eventos/api';
+import { getEvento, getTiposEvento } from '../../../src/features/eventos/api';
 import { formatDataExtenso } from '../../../src/features/chamada/calendar';
-import { useAuth } from '../../../src/features/auth/AuthProvider';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
-import { confirmar } from '../../../src/lib/confirmar';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
+import { WebModal } from '../../../src/components/WebModal';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
 
 export default function DetalheEvento() {
-  const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { meuPapel } = useAuth();
-  const podeEditar = meuPapel === 'dono' || meuPapel === 'professor';
-
-  const [excluindo, setExcluindo] = useState(false);
-  const [erroExcluir, setErroExcluir] = useState<string | null>(null);
 
   const {
     data,
@@ -34,45 +26,27 @@ export default function DetalheEvento() {
   );
   const evento = data?.evento ?? null;
   const tipo = data?.tipo ?? null;
-  const error = erroExcluir ?? erroCarregar;
-
-  function confirmarExclusao() {
-    confirmar('Excluir evento', 'Tem certeza que quer excluir esse evento?', 'Excluir', excluir);
-  }
-
-  async function excluir() {
-    setExcluindo(true);
-    setErroExcluir(null);
-    try {
-      await excluirEvento(id);
-      if (router.canGoBack()) router.back();
-      else router.replace('/');
-    } catch (err) {
-      console.error(err);
-      setErroExcluir('Erro ao excluir evento. Tente novamente.');
-      setExcluindo(false);
-    }
-  }
+  const error = erroCarregar;
 
   if (loading) {
     return (
-      <>
+      <WebModal>
         <PageHeader titulo="Evento" />
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
         </View>
-      </>
+      </WebModal>
     );
   }
 
   if (!evento) {
     return (
-      <>
+      <WebModal>
         <PageHeader titulo="Evento" />
         <View style={styles.center}>
           <Text style={[type.body, styles.subtitle]}>{error ?? 'Evento não encontrado.'}</Text>
         </View>
-      </>
+      </WebModal>
     );
   }
 
@@ -82,7 +56,7 @@ export default function DetalheEvento() {
       : `${evento.data_inicio.split('-').reverse().join('/')} a ${evento.data_fim.split('-').reverse().join('/')}`;
 
   return (
-    <>
+    <WebModal>
       <PageHeader titulo="Evento" />
       <View style={styles.container}>
         <View style={styles.card}>
@@ -106,27 +80,9 @@ export default function DetalheEvento() {
 
         {error ? <Text style={[type.body, styles.error]}>{error}</Text> : null}
 
-        {podeEditar ? (
-          <View style={styles.acoes}>
-            <TouchableOpacity
-              style={styles.editarBotao}
-              onPress={() => router.push(`/chamada/novo-evento?id=${evento.id}`)}
-              disabled={excluindo}
-            >
-              <Text style={styles.editarBotaoTexto}>Editar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.excluirBotao} onPress={confirmarExclusao} disabled={excluindo}>
-              {excluindo ? (
-                <ActivityIndicator color={colors.danger} />
-              ) : (
-                <Text style={styles.excluirBotaoTexto}>Excluir</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        ) : null}
       </View>
       <Footer />
-    </>
+    </WebModal>
   );
 }
 

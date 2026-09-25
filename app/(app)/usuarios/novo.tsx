@@ -16,6 +16,7 @@ import { convidarUsuario } from '../../../src/features/usuarios/api';
 import { useAuth, type Papel } from '../../../src/features/auth/AuthProvider';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
+import { WebModal } from '../../../src/components/WebModal';
 import { Chip } from '../../../src/components/Chip';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
 
@@ -72,7 +73,7 @@ export default function NovoUsuario() {
 
   if (enviado) {
     return (
-      <>
+      <WebModal>
         <PageHeader titulo="Convidar usuário" />
         <View style={styles.container}>
           <Text style={type.title}>Convite enviado</Text>
@@ -89,12 +90,12 @@ export default function NovoUsuario() {
           </TouchableOpacity>
         </View>
         <Footer />
-      </>
+      </WebModal>
     );
   }
 
   return (
-    <>
+    <WebModal>
       <PageHeader titulo="Convidar usuário" />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
@@ -147,7 +148,7 @@ export default function NovoUsuario() {
         </ScrollView>
       </KeyboardAvoidingView>
       <Footer />
-    </>
+    </WebModal>
   );
 }
 

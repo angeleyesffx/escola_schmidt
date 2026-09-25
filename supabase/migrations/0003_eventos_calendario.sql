@@ -53,3 +53,11 @@ create policy evento_leitura on eventos_calendario
   for select using (auth.uid() is not null);
 create policy evento_escrita on eventos_calendario
   for all using (eh_equipe()) with check (eh_equipe());
+
+grant select on public.tipos_evento to anon;
+grant select, insert, update, delete on public.tipos_evento to authenticated;
+grant select, insert, update, delete on public.tipos_evento to service_role;
+
+grant select on public.eventos_calendario to anon;
+grant select, insert, update, delete on public.eventos_calendario to authenticated;
+grant select, insert, update, delete on public.eventos_calendario to service_role;

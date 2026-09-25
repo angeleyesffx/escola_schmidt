@@ -1,7 +1,7 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import type { AulaParticular, AulaRecorrente, AulaTeste } from '../api';
-import type { DiaCalendario } from '../calendar';
+import { formatHora, type DiaCalendario } from '../calendar';
 import type { EventoCalendario } from '../../eventos/api';
 import { filtrarEventosNoDia, filtrarParticularesNoDia, filtrarTestesNoDia } from '../selectors';
 import { colors, radius, type } from '../../../constants/theme';
@@ -45,7 +45,7 @@ export function CalendarioMes({
         {gradeMes.map((dia) => {
           const selecionado = dia.iso === dataISO;
           const foraDoMes = dia.data.getMonth() !== mesAtual;
-          const temAula = aulasPorDiaSemana.has(dia.diaSemana);
+          const aulasDoDia = aulasPorDiaSemana.get(dia.diaSemana) ?? [];
           const eventosDoDia = filtrarEventosNoDia(eventos, dia.iso);
           const particularesDoDia = filtrarParticularesNoDia(particulares, dia.iso);
           const testesDoDia = filtrarTestesNoDia(aulasTeste, dia.iso);
@@ -55,6 +55,7 @@ export function CalendarioMes({
               testID={`chamada-index-mes-dia-${dia.iso}`}
               style={[
                 estilosCalendario.mesDia,
+                styles.mesDia,
                 selecionado && estilosCalendario.mesDiaAtivo,
                 foraDoMes && estilosCalendario.mesDiaFora,
               ]}
@@ -69,7 +70,11 @@ export function CalendarioMes({
               >
                 {dia.diaMes}
               </Text>
-              {temAula ? <View style={styles.mesDiaPonto} /> : null}
+              {aulasDoDia.length > 0 ? (
+                <Text style={styles.mesDiaHorarios} numberOfLines={2}>
+                  {aulasDoDia.map((aula) => formatHora(aula.hora)).join('\n')}
+                </Text>
+              ) : null}
               {eventosDoDia.length > 0 || particularesDoDia.length > 0 || testesDoDia.length > 0 ? (
                 <View style={styles.mesDiaEventosRow}>
                   {eventosDoDia.slice(0, 2).map((e) => (
@@ -92,6 +97,19 @@ export function CalendarioMes({
 }
 
 const styles = StyleSheet.create({
+  mesDia: {
+    height: 88,
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+  mesDiaHorarios: {
+    color: colors.primary,
+    fontFamily: type.caption.fontFamily,
+    fontSize: type.caption.fontSize,
+    lineHeight: 15,
+    marginTop: 2,
+    textAlign: 'center',
+  },
   mesDiaPonto: {
     width: 5,
     height: 5,

@@ -15,6 +15,7 @@ import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { confirmDelete, confirmSave } from '../../../src/lib/confirmar';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
+import { WebModal } from '../../../src/components/WebModal';
 import { FormModal } from '../../../src/components/FormModal';
 import { RowActions } from '../../../src/components/RowActions';
 import { ToggleAtivo } from '../../../src/components/ToggleAtivo';
@@ -147,7 +148,7 @@ export default function ModulosAdmin() {
   }
 
   return (
-    <>
+    <WebModal>
       <PageHeader titulo="Módulos" />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
         <View style={styles.topoRow}>
@@ -167,16 +168,18 @@ export default function ModulosAdmin() {
               <Text style={[type.body, !modulo.ativo && styles.inativo]}>{modulo.nome}</Text>
               <Text style={type.caption}>Número {modulo.numero}</Text>
             </View>
-            <ToggleAtivo
-              testID={`modulo-${modulo.numero}-toggle`}
-              ativo={modulo.ativo}
-              onToggle={() => alternarAtivo(modulo)}
-            />
-            <RowActions
-              testIdBase={`modulo-${modulo.numero}`}
-              onEdit={() => abrirEdicao(modulo)}
-              onDelete={() => excluir(modulo)}
-            />
+            <View style={styles.itemAcoes}>
+              <ToggleAtivo
+                testID={`modulo-${modulo.numero}-toggle`}
+                ativo={modulo.ativo}
+                onToggle={() => alternarAtivo(modulo)}
+              />
+              <RowActions
+                testIdBase={`modulo-${modulo.numero}`}
+                onEdit={() => abrirEdicao(modulo)}
+                onDelete={() => excluir(modulo)}
+              />
+            </View>
           </View>
         ))}
       </ScrollView>
@@ -206,7 +209,7 @@ export default function ModulosAdmin() {
       </FormModal>
 
       <Footer />
-    </>
+    </WebModal>
   );
 }
 
@@ -255,20 +258,24 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   itemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: spacing.sm,
-    minHeight: touchTarget,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     marginBottom: spacing.sm,
   },
   itemTextoWrap: {
-    flex: 1,
-    marginRight: spacing.sm,
+    gap: 2,
+  },
+  itemAcoes: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
   },
   inativo: {
     color: colors.textMuted,

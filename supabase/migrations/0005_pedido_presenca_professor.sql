@@ -29,6 +29,10 @@ create policy professor_aula_leitura on professores_aula
 create policy professor_aula_escrita on professores_aula
   for all using (papel_atual() = 'dono') with check (papel_atual() = 'dono');
 
+grant select on public.professores_aula to anon;
+grant select, insert, update, delete on public.professores_aula to authenticated;
+grant select, insert, update, delete on public.professores_aula to service_role;
+
 -- Pedido de presença só é visível/decidível pelo(s) professor(es)
 -- responsáveis pelo módulo daquele aluno específico, ou pelo dono.
 create function sou_professor_do_pedido(p_aula_id uuid, p_aluno_id uuid) returns boolean

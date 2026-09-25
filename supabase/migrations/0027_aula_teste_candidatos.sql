@@ -34,6 +34,10 @@ create index on aulas_teste_candidatos (aula_teste_id);
 
 alter table aulas_teste_candidatos enable row level security;
 
+grant select on public.aulas_teste_candidatos to anon;
+grant select, insert, update, delete on public.aulas_teste_candidatos to authenticated;
+grant select, insert, update, delete on public.aulas_teste_candidatos to service_role;
+
 -- Mesmo espírito de aulas_teste (0018): staff-only, escopado por quem
 -- responde pelo horário (sou_responsavel_pela_aula) — candidato não tem
 -- login, então não existe papel "candidato" acessando isso.

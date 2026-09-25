@@ -83,6 +83,14 @@ $$;
 alter table aulas_teste        enable row level security;
 alter table aulas_teste_alunos enable row level security;
 
+grant select on public.aulas_teste to anon;
+grant select, insert, update, delete on public.aulas_teste to authenticated;
+grant select, insert, update, delete on public.aulas_teste to service_role;
+
+grant select on public.aulas_teste_alunos to anon;
+grant select, insert, update, delete on public.aulas_teste_alunos to authenticated;
+grant select, insert, update, delete on public.aulas_teste_alunos to service_role;
+
 -- Leitura fica restrita à equipe (mesmo padrão de disponibilidade_particular
 -- pro lado da escrita) — aula teste é agendamento interno, não um dado que o
 -- aluno em teste precisa consultar pelo app.

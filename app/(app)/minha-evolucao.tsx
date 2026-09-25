@@ -8,6 +8,7 @@ import { EvolucaoScreen } from '../../src/features/evolucao/EvolucaoScreen';
 import { PageHeader } from '../../src/components/PageHeader';
 import { Footer } from '../../src/components/Footer';
 import { SeletorAluno } from '../../src/components/SeletorAluno';
+import { WebModal } from '../../src/components/WebModal';
 
 export default function MinhaEvolucaoScreen() {
   const { meusAlunos, meuPapel, meusAlunosCarregado } = useAuth();
@@ -20,9 +21,11 @@ export default function MinhaEvolucaoScreen() {
 
   if (meuPapel === null || (podeAcessar && !meusAlunosCarregado)) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
+      <WebModal>
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </WebModal>
     );
   }
 
@@ -32,7 +35,7 @@ export default function MinhaEvolucaoScreen() {
 
   if (meusAlunos.length === 0) {
     return (
-      <>
+      <WebModal>
         <PageHeader titulo="Minha Evolução" />
         <View style={styles.center}>
           <Text style={[type.body, styles.aviso]}>
@@ -40,14 +43,14 @@ export default function MinhaEvolucaoScreen() {
           </Text>
         </View>
         <Footer />
-      </>
+      </WebModal>
     );
   }
 
   const alunoAtivo = meusAlunos.find((a) => a.id === alunoSelecionadoId) ?? meusAlunos[0];
 
   return (
-    <>
+    <WebModal>
       {meusAlunos.length > 1 ? (
         <View style={styles.seletorWrap}>
           <SeletorAluno
@@ -59,7 +62,7 @@ export default function MinhaEvolucaoScreen() {
         </View>
       ) : null}
       <EvolucaoScreen alunoId={alunoAtivo.id} tituloPagina="Minha Evolução" nomeFallback={alunoAtivo.nome} />
-    </>
+    </WebModal>
   );
 }
 

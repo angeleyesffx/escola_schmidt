@@ -68,3 +68,7 @@ create policy pedido_decisao_equipe on pedidos_presenca
 
 create policy pedido_remocao_equipe on pedidos_presenca
   for delete using (eh_equipe());
+
+grant select on public.pedidos_presenca to anon;
+grant select, insert, update, delete on public.pedidos_presenca to authenticated;
+grant select, insert, update, delete on public.pedidos_presenca to service_role;

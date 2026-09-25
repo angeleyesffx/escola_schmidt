@@ -29,6 +29,10 @@ insert into modulos (numero, nome) values (1, 'Módulo 1'), (2, 'Módulo 2'), (3
 
 alter table modulos enable row level security;
 
+grant select on public.modulos to anon;
+grant select, insert, update, delete on public.modulos to authenticated;
+grant select, insert, update, delete on public.modulos to service_role;
+
 -- Mesmo padrão de tipos_evento (0003): todo mundo autenticado lê, só dono
 -- altera — módulo é decisão estrutural da grade, mesma trava de "Grade
 -- semanal" (configuracoes/grade-semanal.tsx, dono-only).

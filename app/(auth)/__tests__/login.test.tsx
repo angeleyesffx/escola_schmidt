@@ -23,7 +23,7 @@ describe('Login', () => {
     await render(<Login />);
 
     expect(screen.getByText('Escola Schmidt')).toBeTruthy();
-    expect(screen.getByText('Entre com sua conta.')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Entre com sua conta')).toBeTruthy();
     expect(screen.getByTestId('login-input-email')).toBeTruthy();
     expect(screen.getByTestId('login-input-senha')).toBeTruthy();
     expect(screen.getByTestId('login-button-entrar').props.accessibilityState.disabled).toBe(true);

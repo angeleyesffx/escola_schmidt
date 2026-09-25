@@ -3,9 +3,10 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { excluirAulaParticular, getHorariosLivresProfessor, remarcarAulaParticular } from '../../../src/features/chamada/api';
-import { formatDataISO } from '../../../src/features/chamada/calendar';
+import { dataISOAntesDeHoje, formatDataISO } from '../../../src/features/chamada/calendar';
 import { confirmar } from '../../../src/lib/confirmar';
 import { PageHeader } from '../../../src/components/PageHeader';
+import { WebModal } from '../../../src/components/WebModal';
 import { DateRangePicker } from '../../../src/components/DateRangePicker';
 import { Footer } from '../../../src/components/Footer';
 import { Chip } from '../../../src/components/Chip';
@@ -63,6 +64,10 @@ export default function RemarcarAulaParticular() {
       setErro('Escolha um horário livre do professor.');
       return;
     }
+    if (dataISOAntesDeHoje(dataISO)) {
+      setErro('Não é possível remarcar uma aula para uma data retroativa.');
+      return;
+    }
 
     setSalvando(true);
     setErro(null);
@@ -105,7 +110,7 @@ export default function RemarcarAulaParticular() {
   }
 
   return (
-    <>
+    <WebModal>
       <PageHeader titulo="Remarcar aula particular" />
       <View style={styles.container}>
         <Text style={[type.label, styles.rotulo]}>Nova data</Text>
@@ -165,7 +170,7 @@ export default function RemarcarAulaParticular() {
         </TouchableOpacity>
       </View>
       <Footer />
-    </>
+    </WebModal>
   );
 }
 

@@ -8,11 +8,13 @@ export type Aluno = {
   nome: string;
   data_nascimento: string | null;
   modulo: number;
+  aula_recorrente_id?: string | null;
   responsavel_nome: string | null;
   responsavel_telefone: string | null;
   responsavel_email: string | null;
   ativo: boolean;
   perfil_id: string | null;
+  avatar_path?: string | null;
 };
 
 export type PerfilAluno = {
@@ -32,6 +34,7 @@ export type NovoAluno = {
   nome: string;
   data_nascimento: string | null;
   modulo: number;
+  aula_recorrente_id: string | null;
   responsavel_nome: string | null;
   responsavel_telefone: string | null;
   // Contra esse e-mail (normalizado) o gatilho `vincula_aluno_por_email` casa
@@ -47,26 +50,41 @@ export type NovoContrato = {
 };
 
 export async function getAlunos() {
-  const { data, error } = await supabase
+  const consulta = await supabase
     .from('alunos')
     .select(
-      'id, nome, data_nascimento, modulo, responsavel_nome, responsavel_telefone, responsavel_email, ativo, perfil_id'
+      'id, nome, data_nascimento, modulo, aula_recorrente_id, responsavel_nome, responsavel_telefone, responsavel_email, ativo, perfil_id, avatar_path'
     )
     .order('nome');
+  if (!consulta.error) return consulta.data as Aluno[];
+  if (consulta.error.code !== '42703') throw consulta.error;
+
+  const { data, error } = await supabase
+    .from('alunos')
+    .select('id, nome, data_nascimento, modulo, responsavel_nome, responsavel_telefone, responsavel_email, ativo, perfil_id')
+    .order('nome');
   if (error) throw error;
-  return data as Aluno[];
+  return (data ?? []).map((aluno) => ({ ...aluno, aula_recorrente_id: null })) as Aluno[];
 }
 
 export async function getAluno(id: string) {
-  const { data, error } = await supabase
+  const consulta = await supabase
     .from('alunos')
     .select(
-      'id, nome, data_nascimento, modulo, responsavel_nome, responsavel_telefone, responsavel_email, ativo, perfil_id'
+      'id, nome, data_nascimento, modulo, aula_recorrente_id, responsavel_nome, responsavel_telefone, responsavel_email, ativo, perfil_id, avatar_path'
     )
     .eq('id', id)
     .single();
+  if (!consulta.error) return consulta.data as Aluno;
+  if (consulta.error.code !== '42703') throw consulta.error;
+
+  const { data, error } = await supabase
+    .from('alunos')
+    .select('id, nome, data_nascimento, modulo, responsavel_nome, responsavel_telefone, responsavel_email, ativo, perfil_id')
+    .eq('id', id)
+    .single();
   if (error) throw error;
-  return data as Aluno;
+  return { ...data, aula_recorrente_id: null } as Aluno;
 }
 
 export async function getPerfilVinculado(perfilId: string) {
@@ -191,22 +209,20 @@ export async function convidarAluno(alunoId: string, email: string) {
 }
 
 export async function criarAluno(aluno: NovoAluno, contrato: NovoContrato) {
-  const { data: alunoCriado, error: erroAluno } = await supabase
-    .from('alunos')
-    .insert(aluno)
-    .select('id')
-    .single();
-  if (erroAluno) throw erroAluno;
-
-  const { error: erroContrato } = await supabase.from('contratos').insert({
-    aluno_id: alunoCriado.id,
-    plano: contrato.plano,
-    data_inicio: contrato.data_inicio,
-    data_fim: contrato.data_fim,
+  const { data, error } = await supabase.rpc('criar_aluno_com_contrato', {
+    p_nome: aluno.nome,
+    p_data_nascimento: aluno.data_nascimento,
+    p_modulo: aluno.modulo,
+    p_aula_recorrente_id: aluno.aula_recorrente_id,
+    p_responsavel_nome: aluno.responsavel_nome,
+    p_responsavel_telefone: aluno.responsavel_telefone,
+    p_responsavel_email: aluno.responsavel_email,
+    p_plano: contrato.plano,
+    p_data_inicio: contrato.data_inicio,
+    p_data_fim: contrato.data_fim,
   });
-  if (erroContrato) throw erroContrato;
-
-  return alunoCriado.id as string;
+  if (error) throw error;
+  return data as string;
 }
 
 export type DadosAluno = {

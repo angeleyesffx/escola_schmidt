@@ -26,6 +26,7 @@ import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { confirmar } from '../../../src/lib/confirmar';
 import { PageHeader } from '../../../src/components/PageHeader';
 import { Footer } from '../../../src/components/Footer';
+import { WebModal } from '../../../src/components/WebModal';
 import { Chip } from '../../../src/components/Chip';
 import { Dropdown } from '../../../src/components/Dropdown';
 import { DateRangePicker } from '../../../src/components/DateRangePicker';
@@ -225,7 +226,7 @@ export default function DisponibilidadeParticularScreen() {
   }
 
   return (
-    <>
+    <WebModal>
       <PageHeader titulo="Horários livres" />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
@@ -390,7 +391,7 @@ export default function DisponibilidadeParticularScreen() {
       </FormModal>
 
       <Footer />
-    </>
+    </WebModal>
   );
 }
 

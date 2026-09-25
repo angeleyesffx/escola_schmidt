@@ -6,27 +6,33 @@ import {
   adicionarRequisitoNivel,
   atualizarCategoria,
   atualizarHabilidade,
+  atualizarMetodologia,
   atualizarModalidade,
   atualizarRequisitoNivel,
   criarCategoria,
   criarHabilidade,
+  criarMetodologia,
   criarModalidade,
   excluirCategoria,
   excluirHabilidade,
+  excluirMetodologia,
   excluirModalidade,
   getCategoriasCatalogo,
   getHabilidadesCatalogo,
+  getMetodologiasCatalogo,
   getMetodologiasAtivas,
   getModalidadesEvolucao,
   getRequisitosNivelAdmin,
   getUsoCategoria,
   getUsoHabilidade,
+  getUsoMetodologia,
   getUsoModalidade,
   removerRequisitoNivel,
 } from '../../src/features/evolucao/api';
 import type {
   CategoriaCatalogo,
   HabilidadeCatalogo,
+  MetodologiaCatalogo,
   MetodologiaDisponivel,
   ModalidadeEvolucao,
   RequisitoNivelAdmin,
@@ -37,6 +43,7 @@ import { useAsyncData } from '../../src/hooks/useAsyncData';
 import { confirmDelete, confirmSave } from '../../src/lib/confirmar';
 import { PageHeader } from '../../src/components/PageHeader';
 import { Footer } from '../../src/components/Footer';
+import { WebModal } from '../../src/components/WebModal';
 import { Dropdown } from '../../src/components/Dropdown';
 import { FormModal } from '../../src/components/FormModal';
 import { RowActions } from '../../src/components/RowActions';
@@ -65,7 +72,7 @@ export default function CatalogoEvolucao() {
   const { meuPapel } = useAuth();
   const souDono = meuPapel === 'dono';
 
-  const [secaoAberta, setSecaoAberta] = useState<'categorias' | 'habilidades' | 'requisitos'>('categorias');
+  const [secaoAberta, setSecaoAberta] = useState<'categorias' | 'habilidades' | 'metodologias' | 'requisitos'>('categorias');
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
@@ -98,29 +105,53 @@ export default function CatalogoEvolucao() {
   const [statusRequisitoForm, setStatusRequisitoForm] = useState<StatusHabilidadeEvolucao>('dominado');
   const [notaRequisitoForm, setNotaRequisitoForm] = useState('');
 
+  // --- Metodologias ---
+  const [modalMetodologiaAberto, setModalMetodologiaAberto] = useState(false);
+  const [editandoMetodologia, setEditandoMetodologia] = useState<MetodologiaCatalogo | null>(null);
+  const [nomeMetodologiaForm, setNomeMetodologiaForm] = useState('');
+
   const {
     data: modalidades,
     loading: carregandoModalidades,
     reload: recarregarModalidades,
-  } = useAsyncData<ModalidadeEvolucao[]>(getModalidadesEvolucao, [], { mensagemErro: 'Erro ao carregar modalidades.' });
+  } = useAsyncData<ModalidadeEvolucao[]>(getModalidadesEvolucao, [secaoAberta], {
+    enabled: secaoAberta === 'categorias',
+    mensagemErro: 'Erro ao carregar modalidades.',
+  });
 
   const {
     data: categorias,
     loading: carregandoCategorias,
     reload: recarregarCategorias,
-  } = useAsyncData<CategoriaCatalogo[]>(getCategoriasCatalogo, [], { mensagemErro: 'Erro ao carregar categorias.' });
+  } = useAsyncData<CategoriaCatalogo[]>(getCategoriasCatalogo, [secaoAberta], {
+    enabled: secaoAberta === 'categorias',
+    mensagemErro: 'Erro ao carregar categorias.',
+  });
 
   const {
     data: habilidades,
     loading: carregandoHabilidades,
     reload: recarregarHabilidades,
-  } = useAsyncData<HabilidadeCatalogo[]>(getHabilidadesCatalogo, [], { mensagemErro: 'Erro ao carregar habilidades.' });
+  } = useAsyncData<HabilidadeCatalogo[]>(getHabilidadesCatalogo, [secaoAberta], {
+    enabled: secaoAberta === 'habilidades' || secaoAberta === 'requisitos',
+    mensagemErro: 'Erro ao carregar habilidades.',
+  });
 
   const {
     data: metodologias,
     loading: carregandoMetodologias,
-  } = useAsyncData<MetodologiaDisponivel[]>(getMetodologiasAtivas, [], {
+  } = useAsyncData<MetodologiaDisponivel[]>(getMetodologiasAtivas, [secaoAberta], {
+    enabled: secaoAberta === 'requisitos',
     mensagemErro: 'Erro ao carregar metodologias.',
+  });
+
+  const {
+    data: metodologiasCatalogo,
+    loading: carregandoMetodologiasCatalogo,
+    reload: recarregarMetodologiasCatalogo,
+  } = useAsyncData<MetodologiaCatalogo[]>(getMetodologiasCatalogo, [secaoAberta], {
+    enabled: secaoAberta === 'metodologias',
+    mensagemErro: 'Erro ao carregar metodologias do catálogo.',
   });
 
   const metodologiaEscolhida = (metodologias ?? []).find((m) => m.id === metodologiaSelecionada) ?? null;
@@ -497,7 +528,94 @@ export default function CatalogoEvolucao() {
     });
   }
 
-  const carregandoGeral = carregandoModalidades || carregandoCategorias || carregandoHabilidades || carregandoMetodologias;
+  function abrirNovaMetodologia() {
+    setEditandoMetodologia(null);
+    setNomeMetodologiaForm('');
+    setErro(null);
+    setModalMetodologiaAberto(true);
+  }
+
+  function abrirEdicaoMetodologia(metodologia: MetodologiaCatalogo) {
+    setEditandoMetodologia(metodologia);
+    setNomeMetodologiaForm(metodologia.nome);
+    setErro(null);
+    setModalMetodologiaAberto(true);
+  }
+
+  function confirmarSalvarMetodologia() {
+    if (!nomeMetodologiaForm.trim()) {
+      setErro('Informe o nome da metodologia.');
+      return;
+    }
+    if (editandoMetodologia) {
+      confirmSave(salvarMetodologia);
+    } else {
+      salvarMetodologia();
+    }
+  }
+
+  async function salvarMetodologia() {
+    setSalvando(true);
+    setErro(null);
+    try {
+      if (editandoMetodologia) {
+        await atualizarMetodologia(editandoMetodologia.id, { nome: nomeMetodologiaForm.trim() });
+      } else {
+        await criarMetodologia(nomeMetodologiaForm.trim());
+      }
+      setModalMetodologiaAberto(false);
+      await recarregarMetodologiasCatalogo();
+    } catch (err) {
+      console.error(err);
+      setErro('Erro ao salvar metodologia. Tente novamente.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function alternarAtivoMetodologia(metodologia: MetodologiaCatalogo) {
+    setErro(null);
+    try {
+      await atualizarMetodologia(metodologia.id, { ativa: !metodologia.ativa });
+      await recarregarMetodologiasCatalogo();
+    } catch (err) {
+      console.error(err);
+      setErro('Erro ao atualizar metodologia. Tente novamente.');
+    }
+  }
+
+  async function excluirMetodologiaHandler(metodologia: MetodologiaCatalogo) {
+    setErro(null);
+    try {
+      const uso = await getUsoMetodologia(metodologia.id);
+      if (uso > 0) {
+        setErro(`Não é possível excluir "${metodologia.nome}": está atribuída a ${uso} aluno(s). Desative em vez de excluir.`);
+        return;
+      }
+
+      confirmDelete(metodologia.nome, async () => {
+        try {
+          await excluirMetodologia(metodologia.id);
+          await recarregarMetodologiasCatalogo();
+        } catch (err) {
+          console.error(err);
+          setErro('Erro ao excluir metodologia. Tente novamente.');
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      setErro('Erro ao verificar uso da metodologia. Tente novamente.');
+    }
+  }
+
+  const carregandoGeral =
+    secaoAberta === 'categorias'
+      ? carregandoModalidades || carregandoCategorias
+      : secaoAberta === 'habilidades'
+        ? carregandoHabilidades
+        : secaoAberta === 'metodologias'
+          ? carregandoMetodologiasCatalogo
+          : carregandoHabilidades || carregandoMetodologias;
 
   const opcoesModalidades = (modalidades ?? []).filter((m) => m.ativo).map((m) => ({ value: m.id, label: m.nome }));
   const opcoesCategorias = (categorias ?? [])
@@ -508,11 +626,11 @@ export default function CatalogoEvolucao() {
     .map((h) => ({ value: h.id, label: h.nome, sublabel: h.categoriaNome }));
 
   return (
-    <>
+    <WebModal>
       <PageHeader titulo="Catálogo de Evolução" />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
         <View style={styles.abas}>
-          {(['categorias', 'habilidades', 'requisitos'] as const).map((secao) => (
+          {(['categorias', 'habilidades', 'metodologias', 'requisitos'] as const).map((secao) => (
             <TouchableOpacity
               key={secao}
               testID={`catalogo-aba-${secao}`}
@@ -520,7 +638,13 @@ export default function CatalogoEvolucao() {
               onPress={() => setSecaoAberta(secao)}
             >
               <Text style={[styles.abaTexto, secaoAberta === secao && styles.abaTextoAtivo]}>
-                {secao === 'categorias' ? 'Categorias' : secao === 'habilidades' ? 'Habilidades' : 'Requisitos'}
+                {secao === 'categorias'
+                  ? 'Categorias'
+                  : secao === 'habilidades'
+                    ? 'Habilidades'
+                    : secao === 'metodologias'
+                      ? 'Metodologias'
+                      : 'Requisitos'}
               </Text>
             </TouchableOpacity>
           ))}
@@ -550,16 +674,18 @@ export default function CatalogoEvolucao() {
                 <Text style={[type.body, styles.itemTextoWrap, !modalidade.ativo && styles.inativo]}>
                   {modalidade.nome}
                 </Text>
-                <ToggleAtivo
-                  testID={`catalogo-modalidade-${modalidade.id}-toggle`}
-                  ativo={modalidade.ativo}
-                  onToggle={() => alternarAtivoModalidade(modalidade)}
-                />
-                <RowActions
-                  testIdBase={`catalogo-modalidade-${modalidade.id}`}
-                  onEdit={() => abrirEdicaoModalidade(modalidade)}
-                  onDelete={() => excluirModalidadeHandler(modalidade)}
-                />
+                <View style={styles.itemAcoes}>
+                  <ToggleAtivo
+                    testID={`catalogo-modalidade-${modalidade.id}-toggle`}
+                    ativo={modalidade.ativo}
+                    onToggle={() => alternarAtivoModalidade(modalidade)}
+                  />
+                  <RowActions
+                    testIdBase={`catalogo-modalidade-${modalidade.id}`}
+                    onEdit={() => abrirEdicaoModalidade(modalidade)}
+                    onDelete={() => excluirModalidadeHandler(modalidade)}
+                  />
+                </View>
               </View>
             ))}
 
@@ -575,16 +701,18 @@ export default function CatalogoEvolucao() {
                   <Text style={[type.body, !categoria.ativo && styles.inativo]}>{categoria.nome}</Text>
                   <Text style={type.caption}>{categoria.modalidadeNome}</Text>
                 </View>
-                <ToggleAtivo
-                  testID={`catalogo-categoria-${categoria.id}-toggle`}
-                  ativo={categoria.ativo}
-                  onToggle={() => alternarAtivoCategoria(categoria)}
-                />
-                <RowActions
-                  testIdBase={`catalogo-categoria-${categoria.id}`}
-                  onEdit={() => abrirEdicaoCategoria(categoria)}
-                  onDelete={() => excluirCategoriaHandler(categoria)}
-                />
+                <View style={styles.itemAcoes}>
+                  <ToggleAtivo
+                    testID={`catalogo-categoria-${categoria.id}-toggle`}
+                    ativo={categoria.ativo}
+                    onToggle={() => alternarAtivoCategoria(categoria)}
+                  />
+                  <RowActions
+                    testIdBase={`catalogo-categoria-${categoria.id}`}
+                    onEdit={() => abrirEdicaoCategoria(categoria)}
+                    onDelete={() => excluirCategoriaHandler(categoria)}
+                  />
+                </View>
               </View>
             ))}
           </View>
@@ -612,16 +740,18 @@ export default function CatalogoEvolucao() {
                     {habilidade.valorBase}
                   </Text>
                 </View>
-                <ToggleAtivo
-                  testID={`catalogo-habilidade-${habilidade.id}-toggle`}
-                  ativo={habilidade.ativo}
-                  onToggle={() => alternarAtivoHabilidade(habilidade)}
-                />
-                <RowActions
-                  testIdBase={`catalogo-habilidade-${habilidade.id}`}
-                  onEdit={() => abrirEdicaoHabilidade(habilidade)}
-                  onDelete={() => excluirHabilidadeHandler(habilidade)}
-                />
+                <View style={styles.itemAcoes}>
+                  <ToggleAtivo
+                    testID={`catalogo-habilidade-${habilidade.id}-toggle`}
+                    ativo={habilidade.ativo}
+                    onToggle={() => alternarAtivoHabilidade(habilidade)}
+                  />
+                  <RowActions
+                    testIdBase={`catalogo-habilidade-${habilidade.id}`}
+                    onEdit={() => abrirEdicaoHabilidade(habilidade)}
+                    onDelete={() => excluirHabilidadeHandler(habilidade)}
+                  />
+                </View>
               </View>
             ))}
           </View>
@@ -684,11 +814,13 @@ export default function CatalogoEvolucao() {
                         {requisito.notaMinima != null ? ` · ${requisito.notaMinima}% mínimo` : ''}
                       </Text>
                     </View>
-                    <RowActions
-                      testIdBase={`catalogo-requisito-${requisito.id}`}
-                      onEdit={() => abrirEdicaoRequisito(requisito)}
-                      onDelete={() => excluirRequisitoHandler(requisito)}
-                    />
+                    <View style={styles.itemAcoes}>
+                      <RowActions
+                        testIdBase={`catalogo-requisito-${requisito.id}`}
+                        onEdit={() => abrirEdicaoRequisito(requisito)}
+                        onDelete={() => excluirRequisitoHandler(requisito)}
+                      />
+                    </View>
                   </View>
                 ))
               )
@@ -697,7 +829,75 @@ export default function CatalogoEvolucao() {
             )}
           </View>
         ) : null}
+
+        {!carregandoGeral && secaoAberta === 'metodologias' ? (
+          <View>
+            <View style={styles.tituloRow}>
+              <Text style={styles.tituloSecao}>Metodologias</Text>
+              <TouchableOpacity
+                testID="catalogo-metodologia-abrir-novo"
+                style={styles.novoBotao}
+                onPress={abrirNovaMetodologia}
+              >
+                <Text style={styles.novoBotaoTexto}>+ Metodologia</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.explicacao}>
+              Metodologias definem a jornada do aluno e podem ser ativadas ou desativadas sem apagar o histórico.
+            </Text>
+            {(metodologiasCatalogo ?? []).map((metodologia) => (
+              <View key={metodologia.id} style={styles.itemRow}>
+                <View style={styles.itemTextoWrap}>
+                  <Text style={[type.body, !metodologia.ativa && styles.inativo]}>{metodologia.nome}</Text>
+                  <Text style={type.caption}>
+                    {metodologia.temporada} · {metodologia.ativa ? 'ativa' : 'inativa'}
+                  </Text>
+                </View>
+                <View style={styles.itemAcoes}>
+                  <ToggleAtivo
+                    testID={`catalogo-metodologia-${metodologia.id}-toggle`}
+                    ativo={metodologia.ativa}
+                    onToggle={() => alternarAtivoMetodologia(metodologia)}
+                  />
+                  <RowActions
+                    testIdBase={`catalogo-metodologia-${metodologia.id}`}
+                    onEdit={() => abrirEdicaoMetodologia(metodologia)}
+                    onDelete={() => excluirMetodologiaHandler(metodologia)}
+                  />
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : null}
       </ScrollView>
+
+      <FormModal
+        visible={modalMetodologiaAberto}
+        title={editandoMetodologia ? 'Editar metodologia' : 'Nova metodologia'}
+        onClose={() => !salvando && setModalMetodologiaAberto(false)}
+      >
+        <Text style={[type.label, styles.campoRotulo]}>Nome</Text>
+        <TextInput
+          testID="catalogo-metodologia-nome"
+          style={styles.input}
+          value={nomeMetodologiaForm}
+          onChangeText={setNomeMetodologiaForm}
+          placeholder="Ex.: Schmidt Base 2026"
+        />
+
+        <TouchableOpacity
+          testID="catalogo-metodologia-salvar"
+          style={[styles.botao, salvando && styles.botaoDesabilitado]}
+          onPress={confirmarSalvarMetodologia}
+          disabled={salvando}
+        >
+          {salvando ? (
+            <ActivityIndicator color={colors.onPrimary} />
+          ) : (
+            <Text style={styles.botaoTexto}>{editandoMetodologia ? 'Salvar alterações' : 'Criar metodologia'}</Text>
+          )}
+        </TouchableOpacity>
+      </FormModal>
 
       <FormModal
         visible={modalModalidadeAberto}
@@ -895,7 +1095,7 @@ export default function CatalogoEvolucao() {
       </FormModal>
 
       <Footer />
-    </>
+    </WebModal>
   );
 }
 
@@ -944,20 +1144,24 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   itemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: touchTarget,
+    gap: spacing.sm,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     marginBottom: spacing.sm,
   },
   itemTextoWrap: {
-    flex: 1,
-    marginRight: spacing.sm,
+    gap: 2,
+  },
+  itemAcoes: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
   },
   inativo: {
     color: colors.textMuted,

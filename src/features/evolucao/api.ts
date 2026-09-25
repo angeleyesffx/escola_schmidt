@@ -6,10 +6,12 @@ import type {
   AvaliacaoEvolucaoResumo,
   AvaliacaoRapidaEvolucaoInput,
   CategoriaCatalogo,
+  CriterioAvaliacaoDetalhe,
   CriterioHabilidadeEvolucao,
   HabilidadeCatalogo,
   HistoricoNivelEvolucao,
   MetodologiaAtualAluno,
+  MetodologiaCatalogo,
   MetodologiaDisponivel,
   ModalidadeEvolucao,
   RequisitoNivelAdmin,
@@ -88,6 +90,62 @@ export async function getMetodologiasAtivas() {
       .slice()
       .sort((a, b) => a.ordem - b.ordem),
   })) as MetodologiaDisponivel[];
+}
+
+export async function getMetodologiasCatalogo() {
+  const { data, error } = await supabase
+    .from('metodologias_evolucao')
+    .select('id, nome, slug, temporada, vigencia_inicio, vigencia_fim, ativa')
+    .order('nome');
+
+  if (error) throw error;
+
+  return (data ?? []).map((item: any) => ({
+    id: item.id,
+    nome: item.nome,
+    slug: item.slug,
+    temporada: item.temporada,
+    vigenciaInicio: item.vigencia_inicio,
+    vigenciaFim: item.vigencia_fim,
+    ativa: item.ativa,
+  })) as MetodologiaCatalogo[];
+}
+
+export async function criarMetodologia(nome: string) {
+  const { error } = await supabase.from('metodologias_evolucao').insert({
+    nome,
+    slug: slugify(nome),
+    temporada: Number(new Date().getFullYear()),
+    vigencia_inicio: hojeISO(),
+    ativa: true,
+  });
+
+  if (error) throw error;
+}
+
+export async function atualizarMetodologia(id: string, campos: Partial<{ nome: string; ativa: boolean }>) {
+  const payload: Record<string, unknown> = {};
+
+  if ('nome' in campos) payload.nome = campos.nome;
+  if ('ativa' in campos) payload.ativa = campos.ativa;
+
+  const { error } = await supabase.from('metodologias_evolucao').update(payload).eq('id', id);
+  if (error) throw error;
+}
+
+export async function getUsoMetodologia(id: string) {
+  const { count, error } = await supabase
+    .from('aluno_metodologias')
+    .select('id', { count: 'exact', head: true })
+    .eq('metodologia_id', id);
+
+  if (error) throw error;
+  return count ?? 0;
+}
+
+export async function excluirMetodologia(id: string) {
+  const { error } = await supabase.from('metodologias_evolucao').delete().eq('id', id);
+  if (error) throw error;
 }
 
 export async function atribuirMetodologiaAluno(alunoId: string, metodologiaId: string, nivelId: string) {
@@ -202,6 +260,19 @@ export async function getCriteriosHabilidades(habilidadeIds: string[]) {
   })) as CriterioHabilidadeEvolucao[];
 }
 
+// Marcador emitido por registrar_avaliacao_evolucao (0043) quando já existe
+// avaliação da mesma habilidade, do mesmo aluno, no mesmo dia, e o chamador
+// não pediu pra sobrescrever — o cliente reconhece esse prefixo pra oferecer
+// a confirmação em vez de só mostrar "erro ao salvar avaliação".
+const MARCADOR_AVALIACAO_DUPLICADA = 'AVALIACAO_JA_EXISTE_NO_DIA';
+
+export class AvaliacaoDuplicadaError extends Error {
+  constructor() {
+    super('Já existe uma avaliação registrada para esta habilidade nesta data.');
+    this.name = 'AvaliacaoDuplicadaError';
+  }
+}
+
 async function registrarAvaliacaoEvolucaoRpc(
   input: AvaliacaoRapidaEvolucaoInput | AvaliacaoDetalhadaEvolucaoInput,
   criterios: AvaliacaoDetalhadaEvolucaoInput['criterios']
@@ -216,6 +287,7 @@ async function registrarAvaliacaoEvolucaoRpc(
     p_precisa_atencao: input.precisaAtencao,
     p_prioridade_treinamento: input.prioridadeTreinamento,
     p_observacoes: input.observacoes,
+    p_sobrescrever: input.sobrescrever ?? false,
     p_criterios: criterios.map((criterio) => ({
       criterio_id: criterio.criterioId,
       percentual: criterio.percentual,
@@ -230,7 +302,12 @@ async function registrarAvaliacaoEvolucaoRpc(
 
   const { data, error } = await supabase.rpc('registrar_avaliacao_evolucao', payload);
 
-  if (error) throw error;
+  if (error) {
+    if (error.message?.includes(MARCADOR_AVALIACAO_DUPLICADA)) {
+      throw new AvaliacaoDuplicadaError();
+    }
+    throw error;
+  }
   return data as string;
 }
 
@@ -269,22 +346,64 @@ export async function getHistoricoNivelAluno(alunoId: string) {
 export async function getAvaliacoesEvolucaoAluno(alunoId: string) {
   const { data, error } = await supabase
     .from('avaliacoes_evolucao')
-    .select('id, habilidade_id, data_avaliacao, status, percentual_geral, observacoes, habilidades_catalogo(nome)')
+    .select(
+      `
+        id,
+        habilidade_id,
+        data_avaliacao,
+        status,
+        percentual_geral,
+        observacoes,
+        habilidades_catalogo(nome, categorias_habilidade(nome)),
+        perfis(nome)
+      `
+    )
     .eq('aluno_id', alunoId)
     .order('data_avaliacao', { ascending: false })
     .order('criado_em', { ascending: false });
 
   if (error) throw error;
 
-  return (data ?? []).map((item: any) => ({
-    id: item.id,
-    habilidadeId: item.habilidade_id,
-    habilidadeNome: primeiroItem<{ nome: string }>(item.habilidades_catalogo)?.nome ?? 'Habilidade',
-    dataAvaliacao: item.data_avaliacao,
-    status: item.status,
-    percentualGeral: item.percentual_geral,
-    observacoes: item.observacoes,
-  })) as AvaliacaoEvolucaoResumo[];
+  return (data ?? []).map((item: any) => {
+    const habilidade = primeiroItem<{ nome: string; categorias_habilidade: any }>(item.habilidades_catalogo);
+    const categoria = primeiroItem<{ nome: string }>(habilidade?.categorias_habilidade);
+    const professor = primeiroItem<{ nome: string }>(item.perfis);
+    return {
+      id: item.id,
+      habilidadeId: item.habilidade_id,
+      habilidadeNome: habilidade?.nome ?? 'Habilidade',
+      categoriaNome: categoria?.nome ?? '—',
+      professorNome: professor?.nome ?? null,
+      dataAvaliacao: item.data_avaliacao,
+      status: item.status,
+      percentualGeral: item.percentual_geral,
+      observacoes: item.observacoes,
+    };
+  }) as AvaliacaoEvolucaoResumo[];
+}
+
+// Detalhe por critério de uma avaliação específica — buscado sob demanda
+// (ex.: quando o usuário seleciona uma avaliação no dropdown da Jornada),
+// não junto do resumo acima, pra não pesar a consulta de toda a história.
+export async function getCriteriosAvaliacao(avaliacaoId: string) {
+  const { data, error } = await supabase
+    .from('avaliacao_criterios_evolucao')
+    .select('criterio_id, percentual, observacoes, criterios_habilidade(nome, peso)')
+    .eq('avaliacao_id', avaliacaoId)
+    .order('criado_em', { ascending: true });
+
+  if (error) throw error;
+
+  return (data ?? []).map((item: any) => {
+    const criterio = primeiroItem<{ nome: string; peso: number }>(item.criterios_habilidade);
+    return {
+      criterioId: item.criterio_id,
+      nome: criterio?.nome ?? 'Critério',
+      peso: criterio?.peso ?? 0,
+      percentual: item.percentual,
+      observacoes: item.observacoes,
+    };
+  }) as CriterioAvaliacaoDetalhe[];
 }
 
 // ---------------------------------------------------------------------------

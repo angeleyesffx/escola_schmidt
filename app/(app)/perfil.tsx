@@ -1,7 +1,10 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -13,22 +16,34 @@ import {
 } from 'react-native';
 
 import { useAuth } from '../../src/features/auth/AuthProvider';
-import { atualizarMeuPerfil, getMeuPerfil } from '../../src/features/perfil/api';
+import {
+  atualizarMeuPerfil,
+  atualizarEmailLogin,
+  enviarAvatar,
+  enviarAvatarAluno,
+  getAvatarUrl,
+  getMeuPerfil,
+  removerAvatar,
+  removerAvatarAluno,
+} from '../../src/features/perfil/api';
 import { atualizarDadosAluno } from '../../src/features/alunos/api';
 import { useAsyncData } from '../../src/hooks/useAsyncData';
-import { hojeBR, paraBR, paraISO } from '../../src/lib/dataBR';
+import { confirmar } from '../../src/lib/confirmar';
+import { hojeBR, paraBR, paraISO, temIdadeMinima } from '../../src/lib/dataBR';
 import { PageHeader } from '../../src/components/PageHeader';
 import { PersonIcon } from '../../src/components/PersonIcon';
 import { PasswordInput } from '../../src/components/PasswordInput';
 import { DateRangePicker } from '../../src/components/DateRangePicker';
 import { SeletorAluno } from '../../src/components/SeletorAluno';
 import { Footer } from '../../src/components/Footer';
+import { uiAssets } from '../../src/constants/uiAssets';
 import { colors, fonts, radius, spacing, touchTarget, type } from '../../src/constants/theme';
 
 const ROTULO_PAPEL: Record<string, string> = {
   dono: 'Dono',
   professor: 'Professor(a)',
   aluno: 'Aluno',
+  responsavel: 'Responsável',
 };
 
 const REGRAS_SENHA: { chave: string; label: string; cumprida: (senha: string) => boolean }[] = [
@@ -57,10 +72,18 @@ export default function Perfil() {
   const [erroNovoFilho, setErroNovoFilho] = useState<string | null>(null);
   const [sucessoNovoFilho, setSucessoNovoFilho] = useState<string | null>(null);
   const [nome, setNome] = useState('');
+  const [email, setEmail] = useState('');
   const [telefone, setTelefone] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
+  const [salvandoEmail, setSalvandoEmail] = useState(false);
+  const [erroEmail, setErroEmail] = useState<string | null>(null);
+  const [sucessoEmail, setSucessoEmail] = useState<string | null>(null);
+  const [avatarPath, setAvatarPath] = useState<string | null>(null);
+  const [salvandoAvatar, setSalvandoAvatar] = useState(false);
+  const [erroAvatar, setErroAvatar] = useState<string | null>(null);
+  const [mostrarEditarAvatar, setMostrarEditarAvatar] = useState(false);
   const [senhaAtual, setSenhaAtual] = useState('');
   const [novaSenha, setNovaSenha] = useState('');
   const [confirmarNovaSenha, setConfirmarNovaSenha] = useState('');
@@ -72,6 +95,11 @@ export default function Perfil() {
   const [dataNascimentoAluno, setDataNascimentoAluno] = useState('');
   const [responsavelNomeAluno, setResponsavelNomeAluno] = useState('');
   const [responsavelTelefoneAluno, setResponsavelTelefoneAluno] = useState('');
+  const [avatarAlunoPath, setAvatarAlunoPath] = useState<string | null>(null);
+  const [salvandoAvatarAluno, setSalvandoAvatarAluno] = useState(false);
+  const [erroAvatarAluno, setErroAvatarAluno] = useState<string | null>(null);
+  const [mostrarEditarAvatarAluno, setMostrarEditarAvatarAluno] = useState(false);
+  const [editandoEmail, setEditandoEmail] = useState(false);
   const [salvandoAluno, setSalvandoAluno] = useState(false);
   const [erroAluno, setErroAluno] = useState<string | null>(null);
   const [sucessoAluno, setSucessoAluno] = useState<string | null>(null);
@@ -93,7 +121,9 @@ export default function Perfil() {
     if (!meuPerfil) return;
     setNome(meuPerfil.nome);
     setTelefone(meuPerfil.telefone ?? '');
-  }, [meuPerfil]);
+    setAvatarPath(meuPerfil.avatar_path);
+    setEmail(session?.user.email ?? '');
+  }, [meuPerfil, session?.user.email]);
 
   // Mantém a seleção se o aluno escolhido continuar na lista; senão cai pro
   // primeiro (cobre o load inicial e o caso comum de 0 ou 1 aluno vinculado).
@@ -111,6 +141,7 @@ export default function Perfil() {
     setDataNascimentoAluno(alunoSelecionado.data_nascimento ? paraBR(alunoSelecionado.data_nascimento) : '');
     setResponsavelNomeAluno(alunoSelecionado.responsavel_nome ?? '');
     setResponsavelTelefoneAluno(alunoSelecionado.responsavel_telefone ?? '');
+    setAvatarAlunoPath(alunoSelecionado.avatar_path);
   }, [alunoSelecionado]);
 
   function selecionarDataNascimentoAluno(iso: string) {
@@ -128,6 +159,10 @@ export default function Perfil() {
     const nascimentoISO = paraISO(dataNascimentoAluno);
     if (!nascimentoISO) {
       setErroAluno('Informe a data de nascimento.');
+      return;
+    }
+    if (!temIdadeMinima(nascimentoISO)) {
+      setErroAluno('O aluno precisa ter pelo menos 3 anos completos para ser matriculado.');
       return;
     }
 
@@ -158,6 +193,10 @@ export default function Perfil() {
     const nascimentoISO = paraISO(dataNascimentoNovoFilho);
     if (!nascimentoISO) {
       setErroNovoFilho('Informe a data de nascimento.');
+      return;
+    }
+    if (!temIdadeMinima(nascimentoISO)) {
+      setErroNovoFilho('O filho precisa ter pelo menos 3 anos completos para ser matriculado.');
       return;
     }
 
@@ -197,6 +236,148 @@ export default function Perfil() {
       setErro('Erro ao salvar perfil. Tente novamente.');
     } finally {
       setSalvando(false);
+    }
+  }
+
+  async function salvarEmail() {
+    const emailNormalizado = email.trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(emailNormalizado)) {
+      setErroEmail('Informe um e-mail válido.');
+      setSucessoEmail(null);
+      return;
+    }
+    if (emailNormalizado === session?.user.email?.toLowerCase()) {
+      setErroEmail(null);
+      setSucessoEmail('Este já é o e-mail de login atual.');
+      return;
+    }
+
+    setSalvandoEmail(true);
+    setErroEmail(null);
+    setSucessoEmail(null);
+    try {
+      await atualizarEmailLogin(emailNormalizado);
+      setEditandoEmail(false);
+      setSucessoEmail('Enviamos uma confirmação para o novo e-mail.');
+    } catch (err) {
+      console.error(err);
+      setErroEmail('Não foi possível alterar o e-mail. Tente novamente.');
+    } finally {
+      setSalvandoEmail(false);
+    }
+  }
+
+  function confirmarSalvarEmail() {
+    confirmar(
+      'Alterar e-mail de login',
+      `Deseja trocar o e-mail de login para ${email.trim().toLowerCase()}? Será necessário confirmar o novo endereço por e-mail.`,
+      'Confirmar troca',
+      salvarEmail
+    );
+  }
+
+  function alternarEdicaoEmail() {
+    if (!editandoEmail) {
+      setErroEmail(null);
+      setSucessoEmail(null);
+      setEditandoEmail(true);
+      return;
+    }
+    confirmarSalvarEmail();
+  }
+
+  async function escolherAvatar() {
+    if (!session?.user.id) return;
+    setErroAvatar(null);
+    const permissao = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissao.granted) {
+      setErroAvatar('Permita o acesso às fotos para escolher uma imagem.');
+      return;
+    }
+
+    const resultado = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    if (resultado.canceled || !resultado.assets[0]) return;
+
+    setSalvandoAvatar(true);
+    try {
+      const asset = resultado.assets[0];
+      const path = await enviarAvatar(session.user.id, asset.uri, asset.mimeType ?? 'image/jpeg');
+      setAvatarPath(path);
+    } catch (err) {
+      console.error(err);
+      setErroAvatar('Erro ao salvar a foto. Tente novamente.');
+    } finally {
+      setSalvandoAvatar(false);
+    }
+  }
+
+  async function excluirAvatar() {
+    if (!session?.user.id || !avatarPath) return;
+    setSalvandoAvatar(true);
+    setErroAvatar(null);
+    try {
+      await removerAvatar(session.user.id);
+      setAvatarPath(null);
+    } catch (err) {
+      console.error(err);
+      setErroAvatar('Erro ao remover a foto. Tente novamente.');
+    } finally {
+      setSalvandoAvatar(false);
+    }
+  }
+
+  async function escolherAvatarAluno() {
+    if (!session?.user.id || !alunoSelecionado) return;
+    setErroAvatarAluno(null);
+    const permissao = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissao.granted) {
+      setErroAvatarAluno('Permita o acesso às fotos para escolher uma imagem.');
+      return;
+    }
+
+    const resultado = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    if (resultado.canceled || !resultado.assets[0]) return;
+
+    setSalvandoAvatarAluno(true);
+    try {
+      const asset = resultado.assets[0];
+      const path = await enviarAvatarAluno(
+        session.user.id,
+        alunoSelecionado.id,
+        asset.uri,
+        asset.mimeType ?? 'image/jpeg'
+      );
+      setAvatarAlunoPath(path);
+    } catch (err) {
+      console.error(err);
+      setErroAvatarAluno('Erro ao salvar a foto do aluno. Tente novamente.');
+    } finally {
+      setSalvandoAvatarAluno(false);
+    }
+  }
+
+  async function excluirAvatarAluno() {
+    if (!session?.user.id || !alunoSelecionado || !avatarAlunoPath) return;
+    setSalvandoAvatarAluno(true);
+    setErroAvatarAluno(null);
+    try {
+      await removerAvatarAluno(session.user.id, alunoSelecionado.id);
+      setAvatarAlunoPath(null);
+    } catch (err) {
+      console.error(err);
+      setErroAvatarAluno('Erro ao remover a foto do aluno. Tente novamente.');
+    } finally {
+      setSalvandoAvatarAluno(false);
     }
   }
 
@@ -252,14 +433,74 @@ export default function Perfil() {
           <View style={styles.card}>
             <View style={styles.resumoTopo}>
               <View style={styles.resumoTextoWrap}>
-                <Text style={type.title}>{nome || meusAlunos[0]?.nome || session?.user.email}</Text>
+                <Text style={type.title}>{nome || session?.user.email}</Text>
                 <Text style={[type.body, styles.subtitle]}>{meuPapel ? ROTULO_PAPEL[meuPapel] ?? meuPapel : ''}</Text>
-                {session?.user.email ? <Text style={[type.body, styles.subtitle]}>{session.user.email}</Text> : null}
+                <View style={styles.emailTopoRow}>
+                  {editandoEmail ? (
+                    <TextInput
+                      testID="perfil-email-login"
+                      style={styles.emailTopoInput}
+                      value={email}
+                      onChangeText={(texto) => {
+                        setEmail(texto);
+                        setErroEmail(null);
+                        setSucessoEmail(null);
+                      }}
+                      placeholder="seu@email.com"
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      autoFocus
+                    />
+                  ) : (
+                    <Text style={[type.body, styles.subtitle]}>{email || session?.user.email}</Text>
+                  )}
+                  <TouchableOpacity
+                    testID="perfil-email-editar"
+                    style={styles.iconeEditarEmail}
+                    onPress={alternarEdicaoEmail}
+                    disabled={salvandoEmail}
+                    accessibilityRole="button"
+                    accessibilityLabel={editandoEmail ? 'Confirmar novo e-mail' : 'Editar e-mail de login'}
+                  >
+                    {editandoEmail ? (
+                      <Ionicons name="checkmark" size={20} color={colors.primary} />
+                    ) : (
+                      <Image source={uiAssets.icon.edit} style={styles.iconeEditarEmailImagem} />
+                    )}
+                  </TouchableOpacity>
+                </View>
+                {erroEmail ? <Text style={[type.caption, styles.error]}>{erroEmail}</Text> : null}
+                {sucessoEmail ? <Text style={[type.caption, styles.sucesso]}>{sucessoEmail}</Text> : null}
               </View>
-              <View style={styles.resumoImagem}>
-                <PersonIcon size={38} color={colors.primary} />
+              <View style={styles.fotoPrincipalRow}>
+                <TouchableOpacity
+                  testID="perfil-foto-escolher"
+                  style={styles.resumoImagem}
+                  onPress={() => setMostrarEditarAvatar(true)}
+                  disabled={salvandoAvatar}
+                  accessibilityLabel="Alterar foto de perfil"
+                >
+                  {getAvatarUrl(avatarPath) ? (
+                    <Image source={{ uri: getAvatarUrl(avatarPath)! }} style={styles.avatar} />
+                  ) : (
+                    <PersonIcon size={56} color={colors.primary} />
+                  )}
+                  {mostrarEditarAvatar ? (
+                    <TouchableOpacity
+                      testID="perfil-foto-editar"
+                      style={styles.iconeEditarFoto}
+                      onPress={escolherAvatar}
+                      accessibilityRole="button"
+                      accessibilityLabel="Editar foto de perfil"
+                    >
+                      <Ionicons name="create-outline" size={18} color={colors.onPrimary} />
+                    </TouchableOpacity>
+                  ) : null}
+                </TouchableOpacity>
               </View>
             </View>
+            {erroAvatar ? <Text style={[type.body, styles.error]}>{erroAvatar}</Text> : null}
           </View>
 
           <View style={styles.card}>
@@ -439,8 +680,34 @@ export default function Perfil() {
                 alunos={meusAlunos}
                 selecionadoId={alunoSelecionadoId}
                 onSelecionar={setAlunoSelecionadoId}
-                rotulo="Qual aluno"
               />
+
+              <View style={styles.fotoAlunoRow}>
+                <TouchableOpacity
+                  style={styles.fotoAlunoPreview}
+                  onPress={() => setMostrarEditarAvatarAluno(true)}
+                  disabled={salvandoAvatarAluno}
+                  accessibilityLabel="Alterar foto do aluno"
+                >
+                  {getAvatarUrl(avatarAlunoPath) ? (
+                    <Image source={{ uri: getAvatarUrl(avatarAlunoPath)! }} style={styles.avatarAluno} />
+                  ) : (
+                    <PersonIcon size={42} color={colors.primary} />
+                  )}
+                  {mostrarEditarAvatarAluno ? (
+                    <TouchableOpacity
+                      testID="perfil-foto-aluno-editar"
+                      style={styles.iconeEditarFoto}
+                      onPress={escolherAvatarAluno}
+                      accessibilityRole="button"
+                      accessibilityLabel="Editar foto do aluno"
+                    >
+                      <Ionicons name="create-outline" size={18} color={colors.onPrimary} />
+                    </TouchableOpacity>
+                  ) : null}
+                </TouchableOpacity>
+              </View>
+              {erroAvatarAluno ? <Text style={[type.body, styles.error]}>{erroAvatarAluno}</Text> : null}
 
               <Text style={[type.label, styles.rotulo]}>Nome do aluno</Text>
               <TextInput
@@ -570,20 +837,134 @@ const styles = StyleSheet.create({
   resumoTextoWrap: {
     flex: 1,
   },
+  emailTopoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  emailTopoInput: {
+    flex: 1,
+    minHeight: touchTarget,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+    color: colors.text,
+    fontFamily: type.body.fontFamily,
+    fontSize: type.body.fontSize,
+  },
+  iconeEditarEmail: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceTint,
+  },
+  iconeEditarEmailImagem: {
+    width: 28,
+    height: 28,
+    resizeMode: 'contain',
+  },
   resumoImagem: {
-    width: 64,
-    height: 64,
+    width: 112,
+    height: 112,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.primarySoft,
     backgroundColor: colors.surfaceTint,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatar: {
+    width: '100%',
+    height: '100%',
+    borderRadius: radius.md,
+  },
+  fotoAcoes: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  fotoPrincipalRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  fotoPrincipalAcoes: {
+    gap: spacing.sm,
+    justifyContent: 'flex-end',
+    alignSelf: 'stretch',
+  },
+  iconeEditarFoto: {
+    position: 'absolute',
+    right: spacing.xs,
+    bottom: spacing.xs,
+    width: 32,
+    height: 32,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.onPrimary,
+  },
+  emailResumoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  emailResumoTexto: {
+    flex: 1,
+  },
+  botaoFoto: {
+    minHeight: touchTarget,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fotoAlunoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  fotoAlunoPreview: {
+    width: 112,
+    height: 112,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.primarySoft,
+    backgroundColor: colors.surfaceTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarAluno: {
+    width: '100%',
+    height: '100%',
+  },
+  fotoAlunoAcoes: {
+    flex: 1,
+    gap: spacing.sm,
+    justifyContent: 'flex-end',
   },
   rotulo: {
     color: colors.textMuted,
     marginTop: spacing.md,
     marginBottom: spacing.xs,
+  },
+  ajuda: {
+    color: colors.textMuted,
+    marginTop: spacing.xs,
   },
   input: {
     height: touchTarget,

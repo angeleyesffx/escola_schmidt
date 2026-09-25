@@ -82,9 +82,19 @@ export type AvaliacaoEvolucaoResumo = {
   id: string;
   habilidadeId: string;
   habilidadeNome: string;
+  categoriaNome: string;
+  professorNome: string | null;
   dataAvaliacao: string;
   status: StatusHabilidadeEvolucao;
   percentualGeral: number | null;
+  observacoes: string | null;
+};
+
+export type CriterioAvaliacaoDetalhe = {
+  criterioId: string;
+  nome: string;
+  peso: number;
+  percentual: number;
   observacoes: string | null;
 };
 
@@ -104,6 +114,16 @@ export type MetodologiaDisponivel = {
   niveis: { id: string; nome: string; ordem: number }[];
 };
 
+export type MetodologiaCatalogo = {
+  id: string;
+  nome: string;
+  slug: string;
+  temporada: number;
+  vigenciaInicio: string;
+  vigenciaFim: string | null;
+  ativa: boolean;
+};
+
 export type AvaliacaoRapidaEvolucaoInput = {
   alunoId: string;
   habilidadeId: string;
@@ -115,6 +135,7 @@ export type AvaliacaoRapidaEvolucaoInput = {
   prioridadeTreinamento: number | null;
   observacoes: string | null;
   dataAvaliacao?: string;
+  sobrescrever?: boolean;
 };
 
 export type ModalidadeEvolucao = {
@@ -173,4 +194,5 @@ export type AvaliacaoDetalhadaEvolucaoInput = {
     observacoes: string | null;
   }>;
   dataAvaliacao?: string;
+  sobrescrever?: boolean;
 };

@@ -46,6 +46,33 @@ export function filtrarAulasDoProfessor(
   return aulas.filter((aula) => !souProfessor || meusSlots.has(aula.id));
 }
 
+export function filtrarModulosDaAgenda(
+  aulas: AulaRecorrente[],
+  papel: 'dono' | 'professor' | 'aluno' | 'responsavel' | null,
+  modulosAtivosAluno: Set<number>,
+  responsabilidades: ResponsabilidadeProfessor[]
+) {
+  if (papel === 'dono') return aulas;
+
+  const modulosPorSlotProfessor = new Map<string, Set<number>>();
+  for (const responsabilidade of responsabilidades) {
+    const modulos = modulosPorSlotProfessor.get(responsabilidade.aula_recorrente_id) ?? new Set<number>();
+    modulos.add(responsabilidade.modulo);
+    modulosPorSlotProfessor.set(responsabilidade.aula_recorrente_id, modulos);
+  }
+
+  return aulas
+    .map((aula) => {
+      const modulosPermitidos =
+        papel === 'professor'
+          ? modulosPorSlotProfessor.get(aula.id) ?? new Set<number>()
+          : modulosAtivosAluno;
+      const modulos = aula.modulos.filter((modulo) => modulosPermitidos.has(modulo));
+      return modulos.length > 0 ? { ...aula, modulos } : null;
+    })
+    .filter((aula): aula is AulaRecorrente => aula !== null);
+}
+
 export type RegistroLocal = { status: StatusPresenca; registradoEm: string | null };
 
 export type EstadoPresenca = {

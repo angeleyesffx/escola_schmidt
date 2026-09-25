@@ -33,6 +33,7 @@ import { ModalExportacao } from '../../../src/features/chamada/components/ModalE
 import { PedidosPendentesSecao } from '../../../src/features/chamada/components/PedidosPendentesSecao';
 import { useAuth, type MeuAluno } from '../../../src/features/auth/AuthProvider';
 import { PageHeader } from '../../../src/components/PageHeader';
+import { WebModal } from '../../../src/components/WebModal';
 import { Footer } from '../../../src/components/Footer';
 import { colors, radius, spacing, touchTarget, type } from '../../../src/constants/theme';
 
@@ -136,7 +137,7 @@ export default function ChamadaDetalhe() {
 
       const [aula, listaAlunos, listaCandidatos] = await Promise.all([
         getOuCriaAula(recorrente.id, dataSelecionada, recorrente.hora, session?.user.id ?? null),
-        getAlunosPorModulos(recorrente.modulos),
+        getAlunosPorModulos(recorrente.modulos, id),
         getCandidatosTesteDoDia(recorrente.id, dataSelecionada),
       ]);
       const [listaPresencas, pendentes] = await Promise.all([getPresencas(aula), getPedidosPendentes(aula)]);
@@ -281,12 +282,12 @@ export default function ChamadaDetalhe() {
 
   if (loading) {
     return (
-      <>
+      <WebModal>
         <PageHeader titulo="Chamada" />
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
         </View>
-      </>
+      </WebModal>
     );
   }
 
@@ -310,7 +311,7 @@ export default function ChamadaDetalhe() {
   }
 
   return (
-    <>
+    <WebModal>
       <PageHeader titulo={`Chamada ${horario ?? ''}`} />
       <View style={styles.container}>
       <View style={styles.topoRow}>
@@ -379,7 +380,7 @@ export default function ChamadaDetalhe() {
       />
       </View>
       <Footer />
-    </>
+    </WebModal>
   );
 }
 

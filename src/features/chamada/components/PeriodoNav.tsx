@@ -22,7 +22,7 @@ export function PeriodoNav({ modo, diasSemana, dataSelecionada, onNavegar, onAbr
         accessibilityRole="button"
         accessibilityLabel="Período anterior"
       >
-        <Ionicons name="chevron-back" size={22} color={colors.onPrimary} />
+        <Ionicons name="chevron-back" size={18} color={colors.onPrimary} />
       </TouchableOpacity>
       <TouchableOpacity testID="chamada-index-periodo-abrir" style={styles.periodoCentro} onPress={onAbrirPicker}>
         <View style={styles.periodoIconeBadge}>
@@ -41,7 +41,7 @@ export function PeriodoNav({ modo, diasSemana, dataSelecionada, onNavegar, onAbr
         accessibilityRole="button"
         accessibilityLabel="Próximo período"
       >
-        <Ionicons name="chevron-forward" size={22} color={colors.onPrimary} />
+        <Ionicons name="chevron-forward" size={18} color={colors.onPrimary} />
       </TouchableOpacity>
     </View>
   );
@@ -81,11 +81,13 @@ const styles = StyleSheet.create({
     height: 4,
     backgroundColor: colors.primary,
   },
-  // Mesmo padrão do botão de voltar do cabeçalho: círculo preenchido e cor
-  // sólida, não contorno fino — pra quem tem baixa visão enxergar de longe.
+  // Mesmo padrão do botão de voltar do cabeçalho, mas menor: são só setas de
+  // navegação (não a ação principal da tela) — touchTarget cheio (56) ficava
+  // desproporcional ao lado do texto do período (achado de revisão de UX,
+  // 2026-09-22).
   navegarBotao: {
-    width: touchTarget,
-    height: touchTarget,
+    width: touchTarget - 12,
+    height: touchTarget - 12,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',

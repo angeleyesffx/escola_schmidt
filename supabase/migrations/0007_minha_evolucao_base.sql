@@ -199,6 +199,42 @@ alter table niveis_evolucao              enable row level security;
 alter table requisitos_nivel_evolucao    enable row level security;
 alter table aluno_metodologias           enable row level security;
 
+grant select on public.modalidades_evolucao to anon;
+grant select, insert, update, delete on public.modalidades_evolucao to authenticated;
+grant select, insert, update, delete on public.modalidades_evolucao to service_role;
+
+grant select on public.categorias_habilidade to anon;
+grant select, insert, update, delete on public.categorias_habilidade to authenticated;
+grant select, insert, update, delete on public.categorias_habilidade to service_role;
+
+grant select on public.habilidades_catalogo to anon;
+grant select, insert, update, delete on public.habilidades_catalogo to authenticated;
+grant select, insert, update, delete on public.habilidades_catalogo to service_role;
+
+grant select on public.criterios_habilidade to anon;
+grant select, insert, update, delete on public.criterios_habilidade to authenticated;
+grant select, insert, update, delete on public.criterios_habilidade to service_role;
+
+grant select on public.prerequisitos_habilidade to anon;
+grant select, insert, update, delete on public.prerequisitos_habilidade to authenticated;
+grant select, insert, update, delete on public.prerequisitos_habilidade to service_role;
+
+grant select on public.metodologias_evolucao to anon;
+grant select, insert, update, delete on public.metodologias_evolucao to authenticated;
+grant select, insert, update, delete on public.metodologias_evolucao to service_role;
+
+grant select on public.niveis_evolucao to anon;
+grant select, insert, update, delete on public.niveis_evolucao to authenticated;
+grant select, insert, update, delete on public.niveis_evolucao to service_role;
+
+grant select on public.requisitos_nivel_evolucao to anon;
+grant select, insert, update, delete on public.requisitos_nivel_evolucao to authenticated;
+grant select, insert, update, delete on public.requisitos_nivel_evolucao to service_role;
+
+grant select on public.aluno_metodologias to anon;
+grant select, insert, update, delete on public.aluno_metodologias to authenticated;
+grant select, insert, update, delete on public.aluno_metodologias to service_role;
+
 -- Catalogos/metodologia: todo autenticado pode ler; dono administra.
 create policy modalidade_evolucao_leitura on modalidades_evolucao
   for select using (auth.uid() is not null);
